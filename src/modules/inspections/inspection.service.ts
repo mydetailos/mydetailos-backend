@@ -487,84 +487,163 @@ export async function finalizeInspection(
   const condition = inspectionConditionSchema.parse(conditionInput);
   let documentKey: string | undefined;
   try {
-    const row = await prisma.$transaction(async (tx) => {
-      const current = await tx.inspectionReport.findFirst({
-        where: { id, organizationId: scope.organizationId, deletedAt: null, ...(scope.allowedBranchIds === null ? {} : { branchId: { in: scope.allowedBranchIds } }) },
-      });
-      if (!current) throw AppError.notFound("Inspection report not found.");
-      if (current.revision !== revision) throw AppError.conflict("Inspection report revision is stale.");
-      if (current.status !== "DRAFT") throw AppError.conflict("Only draft reports can be finalized.");
-      const data: Record<string, unknown> = {
-        ...current.data as Record<string, unknown>,
-        ...(condition.overallPreDriveCondition !== undefined ? { overallPreDriveCondition: condition.overallPreDriveCondition } : {}),
-        ...(condition.vehicleConditions !== undefined ? { vehicleConditions: condition.vehicleConditions } : {}),
-      };
-      validateInspectionPayload(data);
-      assertInspectionComplete(data);
-      await assertRelatedRecords(scope, current.branchId, data);
-      const [customer, vehicle, branch, settings] = await Promise.all([
-        tx.customer.findFirst({ where: { id: String(data.customerId), organizationId: scope.organizationId } }),
-        tx.vehicle.findFirst({ where: { id: String(data.vehicleId), customerId: String(data.customerId), organizationId: scope.organizationId } }),
-        tx.branch.findFirst({ where: { id: current.branchId, organizationId: scope.organizationId } }),
-        tx.appJsonRow.findUnique({
-          where: { collection_entityId: { collection: "appSettings", entityId: "default" } },
-          select: { payload: true },
-        }),
-      ]);
-      if (!customer || !vehicle || !branch) throw AppError.validation("Customer, vehicle, or branch is no longer available.");
-      const appSettings = settings?.payload && typeof settings.payload === "object"
-        ? settings.payload as Record<string, unknown>
-        : {};
-      const organizationBranding = Object.fromEntries([
-        "businessName", "businessLogo", "businessTagline", "businessPhone", "businessWhatsApp",
-        "businessEmail", "businessAddress", "businessWebsite", "brandPrimary",
-      ].flatMap((key) => typeof appSettings[key] === "string" ? [[key, appSettings[key]]] : []));
-      const snapshot = snapshotInspectionPayload({
-        ...data,
-        customerName: customer.name,
-        customerPhone: customer.phone,
-        customerEmail: customer.email,
-        vehicleRegistration: vehicle.registrationNumber,
-        registrationNumber: vehicle.registrationNumber,
-        vehicleMake: vehicle.make,
-        vehicleModel: vehicle.model,
-        vehicleMakeModel: `${vehicle.make} ${vehicle.model}`.trim(),
-        branchName: branch.name,
-        branchAddress: branch.address,
-        organizationBranding,
-        finalizedBy: actorId,
-      });
-      const photoIds = [...collectUploadIds(data)];
-      const uploads = photoIds.length === 0 ? [] : await tx.inspectionUpload.findMany({
-        where: { id: { in: photoIds }, reportId: id, organizationId: scope.organizationId, branchId: current.branchId },
-      });
-      if (uploads.length !== photoIds.length || uploads.length > 24) {
-        throw AppError.validation("Inspection photos are incomplete or exceed the 24-photo limit.");
-      }
-      const photos = await Promise.all(uploads.map(async (upload) => {
+    /**
+     * Keep the DB transaction short: PDF render + private asset I/O must stay
+     * outside. Neon/Render interactive transactions default to 5s and expire
+     * when finalize includes photos/PDF work inside the transaction.
+     */
+    const prepared = await prisma.$transaction(
+      async (tx) => {
+        const current = await tx.inspectionReport.findFirst({
+          where: {
+            id,
+            organizationId: scope.organizationId,
+            deletedAt: null,
+            ...(scope.allowedBranchIds === null ? {} : { branchId: { in: scope.allowedBranchIds } }),
+          },
+        });
+        if (!current) throw AppError.notFound("Inspection report not found.");
+        if (current.revision !== revision) throw AppError.conflict("Inspection report revision is stale.");
+        if (current.status !== "DRAFT") throw AppError.conflict("Only draft reports can be finalized.");
+        const data: Record<string, unknown> = {
+          ...(current.data as Record<string, unknown>),
+          ...(condition.overallPreDriveCondition !== undefined
+            ? { overallPreDriveCondition: condition.overallPreDriveCondition }
+            : {}),
+          ...(condition.vehicleConditions !== undefined
+            ? { vehicleConditions: condition.vehicleConditions }
+            : {}),
+        };
+        validateInspectionPayload(data);
+        assertInspectionComplete(data);
+        await assertRelatedRecords(scope, current.branchId, data);
+        const [customer, vehicle, branch, settings] = await Promise.all([
+          tx.customer.findFirst({
+            where: { id: String(data.customerId), organizationId: scope.organizationId },
+          }),
+          tx.vehicle.findFirst({
+            where: {
+              id: String(data.vehicleId),
+              customerId: String(data.customerId),
+              organizationId: scope.organizationId,
+            },
+          }),
+          tx.branch.findFirst({
+            where: { id: current.branchId, organizationId: scope.organizationId },
+          }),
+          tx.appJsonRow.findUnique({
+            where: { collection_entityId: { collection: "appSettings", entityId: "default" } },
+            select: { payload: true },
+          }),
+        ]);
+        if (!customer || !vehicle || !branch) {
+          throw AppError.validation("Customer, vehicle, or branch is no longer available.");
+        }
+        const appSettings =
+          settings?.payload && typeof settings.payload === "object"
+            ? (settings.payload as Record<string, unknown>)
+            : {};
+        const organizationBranding = Object.fromEntries(
+          [
+            "businessName",
+            "businessLogo",
+            "businessTagline",
+            "businessPhone",
+            "businessWhatsApp",
+            "businessEmail",
+            "businessAddress",
+            "businessWebsite",
+            "brandPrimary",
+          ].flatMap((key) =>
+            typeof appSettings[key] === "string" ? [[key, appSettings[key]]] : []
+          )
+        );
+        const snapshot = snapshotInspectionPayload({
+          ...data,
+          customerName: customer.name,
+          customerPhone: customer.phone,
+          customerEmail: customer.email,
+          vehicleRegistration: vehicle.registrationNumber,
+          registrationNumber: vehicle.registrationNumber,
+          vehicleMake: vehicle.make,
+          vehicleModel: vehicle.model,
+          vehicleMakeModel: `${vehicle.make} ${vehicle.model}`.trim(),
+          branchName: branch.name,
+          branchAddress: branch.address,
+          organizationBranding,
+          finalizedBy: actorId,
+        });
+        const photoIds = [...collectUploadIds(data)];
+        const uploads =
+          photoIds.length === 0
+            ? []
+            : await tx.inspectionUpload.findMany({
+                where: {
+                  id: { in: photoIds },
+                  reportId: id,
+                  organizationId: scope.organizationId,
+                  branchId: current.branchId,
+                },
+              });
+        if (uploads.length !== photoIds.length || uploads.length > 24) {
+          throw AppError.validation(
+            "Inspection photos are incomplete or exceed the 24-photo limit."
+          );
+        }
+        return { branchId: current.branchId, snapshot, uploads };
+      },
+      { timeout: 20_000, maxWait: 10_000 }
+    );
+
+    const photos = await Promise.all(
+      prepared.uploads.map(async (upload) => {
         const buffer = await readPrivateInspectionAsset(upload.objectKey);
         if (!buffer) throw AppError.validation("An inspection photo is no longer available.");
         return { id: upload.id, buffer, mimeType: upload.mimeType };
-      }));
-      const pdf = await renderInspectionPdf(snapshot, photos);
-      documentKey = `inspection-reports/${id}/revision-${revision}-${randomUUID()}.pdf`;
-      await persistPrivateInspectionAsset({ objectKey: documentKey, buffer: pdf, mimeType: "application/pdf" });
-      const changed = await tx.inspectionReport.updateMany({
-        where: { id, organizationId: scope.organizationId, revision, status: "DRAFT", deletedAt: null },
-        data: { status: "FINAL", data: snapshot as Prisma.InputJsonValue, finalizedAt: new Date(), updatedBy: actorId },
-      });
-      if (changed.count !== 1) throw AppError.conflict("Inspection report revision is stale.");
-      await tx.inspectionReportVersion.create({
-        data: {
-          reportId: id,
-          revision,
-          data: snapshot as Prisma.InputJsonValue,
-          documentKey,
-          finalizedBy: actorId,
-        },
-      });
-      return tx.inspectionReport.findUniqueOrThrow({ where: { id }, include: { versions: true } });
+      })
+    );
+    const pdf = await renderInspectionPdf(prepared.snapshot, photos);
+    documentKey = `inspection-reports/${id}/revision-${revision}-${randomUUID()}.pdf`;
+    await persistPrivateInspectionAsset({
+      objectKey: documentKey,
+      buffer: pdf,
+      mimeType: "application/pdf",
     });
+
+    const row = await prisma.$transaction(
+      async (tx) => {
+        const changed = await tx.inspectionReport.updateMany({
+          where: {
+            id,
+            organizationId: scope.organizationId,
+            revision,
+            status: "DRAFT",
+            deletedAt: null,
+          },
+          data: {
+            status: "FINAL",
+            data: prepared.snapshot as Prisma.InputJsonValue,
+            finalizedAt: new Date(),
+            updatedBy: actorId,
+          },
+        });
+        if (changed.count !== 1) throw AppError.conflict("Inspection report revision is stale.");
+        await tx.inspectionReportVersion.create({
+          data: {
+            reportId: id,
+            revision,
+            data: prepared.snapshot as Prisma.InputJsonValue,
+            documentKey,
+            finalizedBy: actorId,
+          },
+        });
+        return tx.inspectionReport.findUniqueOrThrow({
+          where: { id },
+          include: { versions: true },
+        });
+      },
+      { timeout: 15_000, maxWait: 10_000 }
+    );
     return toInspectionItem(row);
   } catch (error) {
     if (documentKey) await deletePrivateInspectionAsset(documentKey).catch(() => undefined);
