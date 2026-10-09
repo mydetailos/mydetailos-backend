@@ -547,8 +547,8 @@ async function main() {
     },
   });
 
-  const platformEmail = (process.env.PLATFORM_OWNER_EMAIL ?? "platform@mydetailos.local").trim().toLowerCase();
-  const platformPassword = process.env.PLATFORM_OWNER_PASSWORD ?? "ChangeMe!PlatformOwner1";
+  const platformEmail = (process.env.PLATFORM_OWNER_EMAIL ?? "admin@mydetailos.com").trim().toLowerCase();
+  const platformPassword = process.env.PLATFORM_OWNER_PASSWORD ?? "Test@12345";
   const platformHash = await bcrypt.hash(platformPassword, 10);
   const platformPhone = normalizeSuperAdminPhone(process.env.PLATFORM_OWNER_PHONE ?? "9999999998");
 

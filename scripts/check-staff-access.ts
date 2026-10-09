@@ -18,7 +18,7 @@ import {
 import { canManageUserPermissions } from "../src/lib/staff-permissions-policy.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const feRoot = join(__dirname, "../../prime-detailer-frontend/src/lib");
+const feRoot = join(__dirname, "../../mydetailos-workshop/src/lib");
 
 function readFe(path: string): string {
   return readFileSync(join(feRoot, path), "utf8");

@@ -131,9 +131,9 @@ Do ONE of the following:
      S3 → Buckets → ${bucket} → Permissions → Block public access → Edit
      → turn OFF all four switches → Save.
 
-  B) Attach bucket-level permissions to IAM user prime-detailer-api:
+  B) Attach bucket-level permissions to IAM user mydetailos-api:
      Copy scripts/iam-s3-setup-policy.example.json → replace REPLACE_WITH_YOUR_BUCKET_NAME
-     → IAM → Users → prime-detailer-api → Add permissions → Create inline policy → JSON → paste → Save.
+     → IAM → Users → mydetailos-api → Add permissions → Create inline policy → JSON → paste → Save.
 
 Then run:
      npm run s3:setup-aws-public-read -- --policy-only
