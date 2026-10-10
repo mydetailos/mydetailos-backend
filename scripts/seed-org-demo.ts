@@ -12,6 +12,7 @@ import bcrypt from "bcryptjs";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../src/lib/prisma.js";
 import { singletonStorageEntityId } from "../src/constants/json-collections.js";
+import { generateCustomerPassword } from "../src/lib/generate-password.js";
 
 const slug = (process.argv[2] ?? "").trim().toLowerCase();
 if (!slug) {
@@ -169,6 +170,7 @@ async function main() {
         lastVisitDate: ymd(i * 4),
         createdAt: at(90 - i * 8, 11),
         createdByUserId: owner.id,
+        passwordHash: await bcrypt.hash(generateCustomerPassword(c.name, c.phone), 10),
       },
     });
     await prisma.vehicle.create({
