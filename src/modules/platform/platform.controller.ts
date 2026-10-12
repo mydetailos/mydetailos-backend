@@ -1467,7 +1467,17 @@ export async function postPlatformMessagingTest(req: Request, res: Response, nex
         );
       }
       const text = body.body?.trim() || DEFAULT_WHATSAPP_BODY;
-      await sendWhatsAppMessage(body.to, text);
+      const result = await sendWhatsAppMessage(body.to, text);
+      if (
+        result.status === "failed" ||
+        result.status === "undelivered" ||
+        (result.twilioErrorCode != null && result.twilioErrorCode !== 0)
+      ) {
+        const message = result.twilioErrorCode === 63016
+          ? "WhatsApp rejected this free-form message outside the 24-hour reply window. Send a WhatsApp message to the configured sender first, then retry, or use an approved template."
+          : result.twilioErrorMessage || `WhatsApp message ${result.status}${result.twilioErrorCode ? ` (Twilio error ${result.twilioErrorCode})` : ""}.`;
+        throw new AppHttpError(502, message, "WHATSAPP_SEND_FAILED");
+      }
       await writePlatformAuditLog({
         organizationId: null,
         actor,
@@ -1475,7 +1485,7 @@ export async function postPlatformMessagingTest(req: Request, res: Response, nex
         before: null,
         after: { to: body.to, preview: text.slice(0, 120) },
       });
-      res.json({ data: { ok: true, channel: "whatsapp", to: body.to }, error: null });
+      res.json({ data: { ok: true, channel: "whatsapp", to: body.to, sid: result.sid, status: result.status }, error: null });
       return;
     }
 
