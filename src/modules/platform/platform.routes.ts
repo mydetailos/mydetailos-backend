@@ -32,6 +32,7 @@ import {
   putPlatformSettingsHandler,
   getPlatformMessagingStatus,
   postPlatformMessagingTest,
+  getPlatformSmsMessageStatus,
   suspendOrganization,
   restoreOrganization,
   deletePlatformOrganization,
@@ -113,6 +114,7 @@ platformRouter.get("/settings", getPlatformSettingsHandler);
 platformRouter.put("/settings", putPlatformSettingsHandler);
 
 platformRouter.get("/messaging", getPlatformMessagingStatus);
+platformRouter.get("/messaging/sms/:sid", getPlatformSmsMessageStatus);
 platformRouter.post("/messaging/test", postPlatformMessagingTest);
 
 platformRouter.get("/contacts", listPlatformContacts);

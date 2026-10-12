@@ -1,5 +1,6 @@
 import twilio from "twilio";
 import { env } from "../config/env.js";
+import { AppHttpError } from "../lib/app-http-error.js";
 import { splitWhatsAppMessage } from "./whatsapp-message-split.js";
 
 let client: ReturnType<typeof twilio> | null = null;
@@ -34,7 +35,7 @@ function getClient() {
 }
 
 export function isTwilioSmsEnabled(): boolean {
-  const from = Boolean(env.TWILIO_FROM_NUMBER?.trim());
+  const from = Boolean(env.TWILIO_SMS_MESSAGING_SERVICE_SID || env.TWILIO_SMS_FROM || env.TWILIO_FROM_NUMBER);
   return isTwilioConfigured() && from;
 }
 
@@ -139,27 +140,71 @@ export async function sendLoginOtpSms(
   e164To: string,
   code: string
 ): Promise<{ sid: string; status: string }> {
-  const from = env.TWILIO_FROM_NUMBER!.trim();
-  const msg = await getClient().messages.create({
-    body: `Your My Detail OS login code is ${code}. Valid 10 minutes. Do not share this code.`,
-    from,
-    to: e164To,
-  });
-  return { sid: msg.sid, status: msg.status ?? "unknown" };
+  const template = env.TWILIO_SMS_OTP_TEMPLATE ?? "Your My Detail OS login code is {code}. Valid 10 minutes. Do not share this code.";
+  return sendTransactionalSms(e164To, template.replaceAll("{code}", code));
 }
 
 /** Reuse for appointment/reminder SMS once Twilio is configured. */
-export async function sendTransactionalSms(e164To: string, messageBody: string): Promise<void> {
+export async function sendTransactionalSms(e164To: string, messageBody: string): Promise<{ sid: string; status: string }> {
   if (!isTwilioSmsEnabled()) {
-    throw new Error(
-      "Twilio is not configured (set TWILIO_ACCOUNT_SID, TWILIO_FROM_NUMBER, and either TWILIO_AUTH_TOKEN or TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET)"
+    throw new AppHttpError(503,
+      "Twilio SMS requires account credentials and TWILIO_SMS_MESSAGING_SERVICE_SID, TWILIO_SMS_FROM, or TWILIO_FROM_NUMBER.", "SMS_NOT_CONFIGURED"
     );
   }
-  await getClient().messages.create({
-    body: messageBody,
-    from: env.TWILIO_FROM_NUMBER!.trim(),
-    to: e164To,
-  });
+  if (!/^\+[1-9]\d{7,14}$/.test(e164To)) {
+    throw new AppHttpError(400, "SMS recipient must be a valid E.164 phone number.", "INVALID_SMS_RECIPIENT");
+  }
+  if (!messageBody.trim() || messageBody.length > 1600) {
+    throw new AppHttpError(400, "SMS body must contain between 1 and 1600 characters.", "INVALID_SMS_BODY");
+  }
+  if (env.TWILIO_SMS_STATUS_CALLBACK_URL && !env.TWILIO_AUTH_TOKEN) {
+    throw new AppHttpError(503, "SMS status callbacks require TWILIO_AUTH_TOKEN for signature verification, even when sends use API-key credentials.", "SMS_CALLBACK_NOT_CONFIGURED");
+  }
+  const sender = env.TWILIO_SMS_MESSAGING_SERVICE_SID
+    ? { messagingServiceSid: env.TWILIO_SMS_MESSAGING_SERVICE_SID }
+    : { from: (env.TWILIO_SMS_FROM ?? env.TWILIO_FROM_NUMBER)!.trim() };
+  try {
+    const message = await getClient().messages.create({
+      body: messageBody,
+      ...sender,
+      to: e164To,
+      ...(env.TWILIO_SMS_STATUS_CALLBACK_URL ? { statusCallback: env.TWILIO_SMS_STATUS_CALLBACK_URL } : {}),
+    });
+    if (message.status === "failed" || message.status === "undelivered" || message.status === "canceled" || message.errorCode) {
+      throw new AppHttpError(502, `Twilio rejected SMS${message.errorCode ? ` (error ${message.errorCode})` : ""}: ${message.errorMessage || message.status}.`, "SMS_SEND_FAILED");
+    }
+    return { sid: message.sid, status: message.status ?? "unknown" };
+  } catch (error) {
+    if (error instanceof AppHttpError) throw error;
+    const providerError = error as { code?: number; message?: string };
+    throw new AppHttpError(502, `Twilio SMS request failed${providerError.code ? ` (error ${providerError.code})` : ""}: ${providerError.message || "Provider unavailable"}`, "SMS_SEND_FAILED");
+  }
+}
+
+export async function getSmsMessageStatus(sid: string) {
+  if (!/^SM[0-9a-fA-F]{32}$/.test(sid)) {
+    throw new AppHttpError(400, "Invalid Twilio SMS message SID.", "INVALID_SMS_SID");
+  }
+  if (!isTwilioConfigured()) {
+    throw new AppHttpError(503, "Twilio account credentials are not configured.", "SMS_NOT_CONFIGURED");
+  }
+  try {
+    const message = await getClient().messages(sid).fetch();
+    if (!message.to?.startsWith("+") || message.direction !== "outbound-api") {
+      throw new AppHttpError(404, "Outbound SMS message not found.", "SMS_NOT_FOUND");
+    }
+    return {
+      sid: message.sid,
+      status: message.status,
+      delivered: message.status === "delivered",
+      errorCode: message.errorCode ?? null,
+      errorMessage: message.errorMessage ?? null,
+    };
+  } catch (error) {
+    if (error instanceof AppHttpError) throw error;
+    const providerError = error as { status?: number };
+    throw new AppHttpError(providerError.status === 404 ? 404 : 502, "Could not retrieve SMS delivery status from Twilio.", "SMS_STATUS_FAILED");
+  }
 }
 
 /** Approved WhatsApp template (Content API) — use outside session / for utility messages. */

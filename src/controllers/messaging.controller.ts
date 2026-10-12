@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { z } from "zod";
+import { env } from "../config/env.js";
 import {
   isTwilioSmsEnabled,
   isTwilioWhatsAppEnabled,
@@ -7,6 +8,7 @@ import {
   sendTransactionalSms,
   sendWhatsAppMessage,
   toTwilioWhatsAppAddress,
+  verifyTwilioWebhookSignature,
 } from "../services/twilio-sms.service.js";
 import { isResendConfigured, sendViaResend } from "../services/resend-send.js";
 import { prisma } from "../lib/prisma.js";
@@ -17,7 +19,8 @@ async function logMessage(params: {
   recipient: string;
   subject?: string;
   body: string;
-  status: "sent" | "failed";
+  status: string;
+  providerMessageId?: string;
   error?: string;
   organizationId?: string;
 }) {
@@ -44,6 +47,7 @@ async function logMessage(params: {
       subject: params.subject || null,
       body: params.body,
       status: params.status,
+      ...(params.providerMessageId ? { providerMessageId: params.providerMessageId } : {}),
       error: params.error || null,
       customerId: customer?.id || null,
       customerName: customer?.name || null,
@@ -219,6 +223,31 @@ const TEST_SMS_BODY =
 const TEST_WHATSAPP_BODY =
   "My Detail OS — test WhatsApp. If you received this, Twilio WhatsApp is working. Replies are not monitored.";
 
+export async function postSmsStatus(req: Request, res: Response, next: NextFunction) {
+  try {
+    const callbackUrl = env.TWILIO_SMS_STATUS_CALLBACK_URL;
+    if (!callbackUrl || !env.TWILIO_AUTH_TOKEN) {
+      res.status(503).json({ data: null, error: { message: "SMS callback verification is not configured", code: "SMS_CALLBACK_NOT_CONFIGURED" } });
+      return;
+    }
+    const params = z.record(z.string(), z.string()).parse(req.body);
+    const signature = String(req.headers["x-twilio-signature"] ?? "");
+    if (!verifyTwilioWebhookSignature(callbackUrl, params, signature) || params.AccountSid !== env.TWILIO_ACCOUNT_SID) {
+      res.status(403).json({ data: null, error: { message: "Invalid provider webhook signature", code: "SMS_CALLBACK_FORBIDDEN" } });
+      return;
+    }
+    const payload = z.object({
+      MessageSid: z.string().regex(/^SM[0-9a-fA-F]{32}$/),
+      MessageStatus: z.enum(["accepted", "scheduled", "queued", "sending", "sent", "delivered", "undelivered", "failed", "canceled"]),
+      ErrorCode: z.string().regex(/^\d*$/).optional(),
+    }).parse(params);
+    console.info(`[twilio/sms] sid=${payload.MessageSid} status=${payload.MessageStatus}${payload.ErrorCode ? ` error=${payload.ErrorCode}` : ""}`);
+    res.status(200).end();
+  } catch (error) {
+    next(error);
+  }
+}
+
 /** Authenticated smoke test for transactional SMS (Twilio). */
 export async function postSmsTest(req: Request, res: Response, next: NextFunction) {
   try {
@@ -228,29 +257,31 @@ export async function postSmsTest(req: Request, res: Response, next: NextFunctio
         data: null,
         error: {
           message:
-            "SMS not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN (or API keys), and TWILIO_FROM_NUMBER on the API server.",
+            "SMS not configured. Set Twilio credentials and TWILIO_SMS_MESSAGING_SERVICE_SID, TWILIO_SMS_FROM, or TWILIO_FROM_NUMBER on the API server.",
           code: "SMS_NOT_CONFIGURED",
         },
       });
       return;
     }
     const to = normalizePhoneToE164(phone);
+    const text = env.TWILIO_SMS_TEST_BODY ?? TEST_SMS_BODY;
     try {
-      await sendTransactionalSms(to, TEST_SMS_BODY);
+      const result = await sendTransactionalSms(to, text);
       const msgLog = await logMessage({
       organizationId: req.auth?.organizationId,
         type: "sms",
         recipient: to,
-        body: TEST_SMS_BODY,
-        status: "sent",
+        body: text,
+        status: result.status,
+        providerMessageId: result.sid,
       });
-      res.json({ data: { ok: true as const, message: msgLog }, error: null });
+      res.json({ data: { ok: true as const, message: msgLog, sid: result.sid, status: result.status }, error: null });
     } catch (err: any) {
       const msgLog = await logMessage({
       organizationId: req.auth?.organizationId,
         type: "sms",
         recipient: to,
-        body: TEST_SMS_BODY,
+        body: text,
         status: "failed",
         error: err?.message || String(err),
       });

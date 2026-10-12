@@ -31,6 +31,7 @@
     "test:referral-eligibility": "tsx --test scripts/referral-eligibility.test.ts",
     "test:party-ledger": "tsx --test scripts/party-ledger-public.test.ts",
     "test:reminder-job": "tsx --test scripts/reminder-job.test.ts scripts/internal-job-auth.test.ts",
+    "test:sms": "tsx --test scripts/twilio-sms.test.ts",
     "test:bootstrap-thin": "tsx scripts/check-bootstrap-thin.ts",
     "test:list-scope": "tsx scripts/check-list-scope.ts",
     "test:tenant-org": "tsx scripts/check-tenant-org-columns.ts",

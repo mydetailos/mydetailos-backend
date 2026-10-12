@@ -2,12 +2,15 @@ import { Router } from "express";
 import { requireAuth, requirePermission } from "../middleware/auth.js";
 import {
   postSmsTest,
+  postSmsStatus,
   postTransactionalEmail,
   postWhatsApp,
   postWhatsAppTest,
 } from "../controllers/messaging.controller.js";
 
 export const messagingRouter = Router();
+
+messagingRouter.post("/sms/status", postSmsStatus);
 
 messagingRouter.use(requireAuth);
 

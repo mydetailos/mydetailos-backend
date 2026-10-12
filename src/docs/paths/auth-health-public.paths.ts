@@ -34,7 +34,7 @@ export const authPaths: OpenApiPaths = {
     post: {
       tags: ["Auth"],
       summary: "Send login OTP (SMS)",
-      description: "Public. Sends OTP to an active staff phone (10 digits).",
+      description: "Public. Sends OTP to an active staff phone (10 digits). Per-phone 60-second resend cooldown and five requests per ten-minute window, per process. Production requires SMS configuration; provider acceptance is not delivery confirmation.",
       security: [],
       requestBody: jsonBody({
         type: "object",
@@ -45,6 +45,7 @@ export const authPaths: OpenApiPaths = {
         "200": okResponse({ type: "object", additionalProperties: true }),
         ...commonErrorResponses({
           "404": { description: "No active user for phone" },
+          "429": { description: "OTP request rate limit exceeded" },
           "503": { $ref: "#/components/responses/ServiceUnavailable" },
         }),
       },
@@ -54,7 +55,7 @@ export const authPaths: OpenApiPaths = {
     post: {
       tags: ["Auth"],
       summary: "Verify login OTP",
-      description: "Public. Returns the same AuthSuccess envelope as password login.",
+      description: "Public. Returns AuthSuccess after a valid single-use OTP. Five incorrect attempts invalidate the code. Demo bypass is disabled in production.",
       security: [],
       requestBody: jsonBody({
         type: "object",

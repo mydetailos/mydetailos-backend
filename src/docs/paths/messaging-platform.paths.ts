@@ -16,11 +16,42 @@ const termMonthsSchema = {
 };
 
 export const messagingPaths: OpenApiPaths = {
+  "/api/messaging/sms/status": {
+    post: {
+      tags: ["Messaging"],
+      summary: "Twilio SMS delivery callback",
+      description: "Provider form webhook. Requires SDK signature validation, configured HTTPS callback URL and matching AccountSid; logs SID/status/error code only.",
+      security: [],
+      parameters: [{ name: "X-Twilio-Signature", in: "header", required: true, schema: { type: "string" } }],
+      requestBody: {
+        required: true,
+        content: {
+          "application/x-www-form-urlencoded": {
+            schema: {
+              type: "object", required: ["AccountSid", "MessageSid", "MessageStatus"], additionalProperties: { type: "string" },
+              properties: {
+                AccountSid: { type: "string" },
+                MessageSid: { type: "string", pattern: "^SM[0-9a-fA-F]{32}$" },
+                MessageStatus: { type: "string", enum: ["accepted", "scheduled", "queued", "sending", "sent", "delivered", "undelivered", "failed", "canceled"] },
+                ErrorCode: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        "200": { description: "Verified callback acknowledged" },
+        "403": { description: "Invalid signature or account" },
+        "503": { description: "Callback verification not configured" },
+        "400": { description: "Invalid callback fields" },
+      },
+    },
+  },
   "/api/messaging/sms/test": {
     post: {
       tags: ["Messaging"],
       summary: "Send test SMS",
-      description: permNote("SETTINGS", "Uses a fixed server test body."),
+      description: permNote("SETTINGS", "Uses TWILIO_SMS_TEST_BODY or default test text. Returns provider sid/status, not a delivery guarantee."),
       security: bearerSecurity,
       requestBody: jsonBody({
         type: "object",
@@ -892,10 +923,56 @@ export const platformExtPaths: OpenApiPaths = {
             emailEnabled: { type: "boolean" },
             mailFromSet: { type: "boolean" },
             twilioFromSet: { type: "boolean" },
+            smsSenderMode: { type: "string", nullable: true, enum: ["messaging_service", "sms_sender", "phone_number"] },
+            smsStatusCallbackConfigured: { type: "boolean" },
             twilioWhatsappFromSet: { type: "boolean" },
           },
         }),
         ...commonErrorResponses(),
+      },
+    },
+  },
+  "/api/platform/messaging/sms/{sid}": {
+    get: {
+      tags: ["SaaS Admin", "Messaging"],
+      summary: "Look up outbound SMS delivery status",
+      description: "Platform authentication required. Returns provider delivery metadata only, not recipient or content. Sent/queued/accepted do not confirm handset delivery.",
+      security: platformSecurity,
+      parameters: [{ name: "sid", in: "path", required: true, schema: { type: "string", pattern: "^SM[0-9a-fA-F]{32}$" } }],
+      responses: {
+        "200": okResponse({
+          type: "object",
+          properties: {
+            sid: { type: "string" }, status: { type: "string" }, delivered: { type: "boolean" },
+            errorCode: { type: "integer", nullable: true }, errorMessage: { type: "string", nullable: true },
+          },
+        }),
+        ...commonErrorResponses(),
+        "502": { description: "Provider status lookup failed" },
+        "503": { description: "Twilio account not configured" },
+      },
+    },
+  },
+  "/api/platform/messaging/test": {
+    post: {
+      tags: ["SaaS Admin", "Messaging"],
+      summary: "Send a platform provider test message",
+      description: "Platform authentication required. SMS body must match approved wording for the domestic India route. Successful SMS/WhatsApp submissions return sid/status; acceptance is not proof of delivery.",
+      security: platformSecurity,
+      requestBody: jsonBody({
+        type: "object", required: ["channel", "to"],
+        properties: {
+          channel: { type: "string", enum: ["sms", "whatsapp", "email"] },
+          to: { type: "string" },
+          body: { type: "string", description: "Optional text. SMS uses TWILIO_SMS_TEST_BODY or default when omitted; SMS/WhatsApp maximum 1600, email maximum 20000 characters." },
+          subject: { type: "string", maxLength: 200, description: "Email only" },
+        },
+      }),
+      responses: {
+        "200": okResponse({ type: "object", additionalProperties: true }),
+        ...commonErrorResponses(),
+        "502": { description: "Provider send failed" },
+        "503": { description: "Channel is not configured" },
       },
     },
   },

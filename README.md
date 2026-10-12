@@ -35,6 +35,14 @@ See [`env.example`](./env.example) for all variables with descriptions. Required
 
 Optional: `RESEND_API_KEY`, `TWILIO_*`, `S3_*`, `PLATFORM_ADMIN_API_KEY`
 
+## SMS Setup
+
+See [Twilio SMS setup](docs/twilio-sms.md) for sender/Messaging Service configuration, India DLT onboarding, OTP templates, delivery callbacks, and troubleshooting. WhatsApp registration alone does not enable SMS.
+
+```bash
+npm run test:sms       # mocked sends, webhook signatures, OTP safeguards; no real SMS
+```
+
 ## Database
 
 ```bash

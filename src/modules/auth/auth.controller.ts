@@ -9,6 +9,7 @@ import {
   consumeLoginOtpIfValid,
   findActiveUserByTenDigitPhone,
   issueLoginOtp,
+  enforceLoginOtpSendLimit,
   isDemoLoginOtp,
 } from "./login-otp.service.js";
 import {
@@ -218,12 +219,17 @@ export async function sendLoginOtp(req: Request, res: Response, next: NextFuncti
   const isProduction = process.env.NODE_ENV === "production";
   try {
     const body = otpSendSchema.parse(req.body);
+    enforceLoginOtpSendLimit(body.phone);
     const user = await findActiveUserByTenDigitPhone(body.phone);
     if (!user) {
       res.status(404).json({
         data: null,
         error: { message: "No account found for this mobile number" },
       });
+      return;
+    }
+    if (isProduction && !isTwilioSmsEnabled()) {
+      res.status(503).json({ data: null, error: { message: "SMS login is not configured. Please use email/password login or contact support.", code: "SMS_NOT_CONFIGURED" } });
       return;
     }
     const code = issueLoginOtp(body.phone);

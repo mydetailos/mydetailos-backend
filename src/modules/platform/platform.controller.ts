@@ -43,6 +43,7 @@ import {
   normalizePhoneToE164,
   sendTransactionalSms,
   sendWhatsAppMessage,
+  getSmsMessageStatus,
 } from "../../services/twilio-sms.service.js";
 import { isResendConfigured, sendViaResend } from "../../services/resend-send.js";
 
@@ -1396,7 +1397,9 @@ export async function getPlatformMessagingStatus(req: Request, res: Response, ne
         whatsappEnabled: isTwilioWhatsAppEnabled(),
         emailEnabled: isResendConfigured(),
         mailFromSet: Boolean(env.MAIL_FROM?.trim()),
-        twilioFromSet: Boolean(env.TWILIO_FROM_NUMBER?.trim()),
+        twilioFromSet: Boolean(env.TWILIO_SMS_FROM || env.TWILIO_FROM_NUMBER || env.TWILIO_SMS_MESSAGING_SERVICE_SID),
+        smsSenderMode: env.TWILIO_SMS_MESSAGING_SERVICE_SID ? "messaging_service" : env.TWILIO_SMS_FROM ? "sms_sender" : env.TWILIO_FROM_NUMBER ? "phone_number" : null,
+        smsStatusCallbackConfigured: Boolean(env.TWILIO_SMS_STATUS_CALLBACK_URL && env.TWILIO_AUTH_TOKEN),
         twilioWhatsappFromSet: Boolean(env.TWILIO_WHATSAPP_FROM?.trim()),
       },
       error: null,
@@ -1427,6 +1430,15 @@ const messagingTestSchema = z.discriminatedUnion("channel", [
   }),
 ]);
 
+export async function getPlatformSmsMessageStatus(req: Request, res: Response, next: NextFunction) {
+  try {
+    const sid = z.string().regex(/^SM[0-9a-fA-F]{32}$/).parse(req.params.sid);
+    res.json({ data: await getSmsMessageStatus(sid), error: null });
+  } catch (error) {
+    next(error);
+  }
+}
+
 const DEFAULT_SMS_BODY =
   "My Detail OS — platform test SMS. If you received this, Twilio SMS is working.";
 const DEFAULT_WHATSAPP_BODY =
@@ -1445,16 +1457,16 @@ export async function postPlatformMessagingTest(req: Request, res: Response, nex
         throw new AppHttpError(503, "SMS is not configured on the API server.", "SMS_NOT_CONFIGURED");
       }
       const to = normalizePhoneToE164(body.to);
-      const text = body.body?.trim() || DEFAULT_SMS_BODY;
-      await sendTransactionalSms(to, text);
+      const text = body.body?.trim() || env.TWILIO_SMS_TEST_BODY || DEFAULT_SMS_BODY;
+      const result = await sendTransactionalSms(to, text);
       await writePlatformAuditLog({
         organizationId: null,
         actor,
         action: "messaging.test_sms",
         before: null,
-        after: { to, preview: text.slice(0, 120) },
+        after: { to, preview: text.slice(0, 120), sid: result.sid, status: result.status },
       });
-      res.json({ data: { ok: true, channel: "sms", to }, error: null });
+      res.json({ data: { ok: true, channel: "sms", to, sid: result.sid, status: result.status }, error: null });
       return;
     }
 

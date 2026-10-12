@@ -45,9 +45,17 @@ const schema = z.object({
   TWILIO_API_KEY_SECRET: z.string().optional(),
   /** E.164 sender, e.g. +15005550006 (trial) or your Twilio number */
   TWILIO_FROM_NUMBER: z.string().optional(),
+  TWILIO_SMS_FROM: z.string().regex(/^(\+[1-9]\d{7,14}|(?=[A-Za-z0-9 ]*[A-Za-z])[A-Za-z0-9 ]{1,11})$/).optional(),
+  TWILIO_SMS_MESSAGING_SERVICE_SID: z.string().regex(/^MG[0-9a-fA-F]{32}$/).optional(),
+  TWILIO_SMS_STATUS_CALLBACK_URL: z.string().url().refine((value) => {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.pathname === "/api/messaging/sms/status" && !url.search && !url.hash && !url.username && !url.password;
+  }, "SMS callback must be an HTTPS URL ending in /api/messaging/sms/status without query or credentials").optional(),
+  TWILIO_SMS_OTP_TEMPLATE: z.string().refine((value) => value.includes("{code}"), "TWILIO_SMS_OTP_TEMPLATE must contain {code}").optional(),
+  TWILIO_SMS_TEST_BODY: z.string().optional(),
   /**
    * WhatsApp-enabled sender from Twilio, e.g. whatsapp:+14155238886 (sandbox) or whatsapp:+91… after approval.
-   * Required only for server-side WhatsApp API; SMS OTP still uses TWILIO_FROM_NUMBER.
+  * Required only for server-side WhatsApp API; SMS uses its separate sender configuration.
    */
   TWILIO_WHATSAPP_FROM: z.string().optional(),
   /** Approved Twilio Content SID with a document media header for inspection reports. */
@@ -114,6 +122,11 @@ export const env = schema.parse({
   TWILIO_API_KEY_SID: trimOpt(process.env.TWILIO_API_KEY_SID),
   TWILIO_API_KEY_SECRET: trimOpt(process.env.TWILIO_API_KEY_SECRET),
   TWILIO_FROM_NUMBER: trimOpt(process.env.TWILIO_FROM_NUMBER),
+  TWILIO_SMS_FROM: trimOpt(process.env.TWILIO_SMS_FROM),
+  TWILIO_SMS_MESSAGING_SERVICE_SID: trimOpt(process.env.TWILIO_SMS_MESSAGING_SERVICE_SID),
+  TWILIO_SMS_STATUS_CALLBACK_URL: trimOpt(process.env.TWILIO_SMS_STATUS_CALLBACK_URL),
+  TWILIO_SMS_OTP_TEMPLATE: trimOpt(process.env.TWILIO_SMS_OTP_TEMPLATE),
+  TWILIO_SMS_TEST_BODY: trimOpt(process.env.TWILIO_SMS_TEST_BODY),
   TWILIO_WHATSAPP_FROM: trimOpt(process.env.TWILIO_WHATSAPP_FROM),
   TWILIO_INSPECTION_TEMPLATE_SID: trimOpt(process.env.TWILIO_INSPECTION_TEMPLATE_SID),
   TWILIO_SERVICE_REMINDER_TEMPLATE_SID: trimOpt(process.env.TWILIO_SERVICE_REMINDER_TEMPLATE_SID),
