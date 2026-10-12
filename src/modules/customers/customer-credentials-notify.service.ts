@@ -12,7 +12,10 @@ import {
   sendWhatsAppMessage,
   whatsappTemplateOrBody,
 } from "../../services/twilio-sms.service.js";
-import { buildCustomerCredentialsWhatsAppMessage } from "../../lib/customer-credentials-whatsapp.js";
+import {
+  buildCustomerCredentialsWhatsAppMessage,
+  customerCredentialsTemplateVariables,
+} from "../../lib/customer-credentials-whatsapp.js";
 import { upsertCollectionItem } from "../collections/app-json-store.js";
 import { ensureOrganizationHasSlug } from "../../lib/ensure-organization-slug.js";
 
@@ -92,7 +95,7 @@ export async function sendCustomerCredentialsWhatsApp(opts: {
   const businessName = await resolveBusinessName(opts.organizationId);
   const customerPortalUrl = await resolveCustomerPortalLoginUrl(opts.organizationId);
   const message = buildCustomerCredentialsWhatsAppMessage({
-    firstName: opts.customerName,
+    customerName: opts.customerName,
     phone: opts.phone,
     password: opts.plainPassword,
     businessName,
@@ -112,10 +115,15 @@ export async function sendCustomerCredentialsWhatsApp(opts: {
     return { sent: false, reason };
   }
 
+  const templateVariables = customerCredentialsTemplateVariables({
+    customerName: opts.customerName,
+    businessName,
+  });
+
   try {
     await sendWhatsAppMessage(
       opts.phone,
-      whatsappTemplateOrBody(env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID, {}, message)
+      whatsappTemplateOrBody(env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID, templateVariables, message)
     );
     await logWhatsAppAttempt({
       organizationId: opts.organizationId,

@@ -18,7 +18,6 @@ import {
   whatsappTemplateOrBody,
   type WhatsAppTemplateSend,
 } from "../../services/twilio-sms.service.js";
-import { sendUserCredentialsEmail } from "../auth/onboarding-credentials-email.service.js";
 
 export type OwnerTrialNotifyResult = {
   email: boolean;
@@ -81,33 +80,7 @@ export async function notifyOwnerTrialStarted(opts: {
     temporaryPassword: opts.temporaryPassword,
   });
 
-  if (isResendConfigured()) {
-    try {
-      const r = opts.temporaryPassword
-        ? await sendUserCredentialsEmail({
-            toEmail: opts.email,
-            recipientName: opts.ownerName,
-            temporaryPassword: opts.temporaryPassword,
-          })
-        : await sendViaResend({
-            to: [opts.email],
-            subject: `Your ${opts.trialDays} day MY DETAIL OS trial has started`,
-            html: `<p>${waBody.replace(/\n/g, "<br/>")}</p>`,
-            text: waBody,
-          });
-      sent.email = r.ok;
-      if (!r.ok) {
-        sent.errors.email = friendlyNotifyError(
-          "email",
-          "detail" in r ? r.detail : "Email send failed"
-        );
-      }
-    } catch (err) {
-      sent.errors.email = err instanceof Error ? err.message : "Email send failed";
-    }
-  } else {
-    sent.errors.email = "RESEND_API_KEY is not set";
-  }
+  // Email notification on trial signup removed — notification is WhatsApp only.
 
   if (opts.phone && isTwilioSmsEnabled()) {
     try {
