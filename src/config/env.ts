@@ -52,6 +52,15 @@ const schema = z.object({
   TWILIO_WHATSAPP_FROM: z.string().optional(),
   /** Approved Twilio Content SID with a document media header for inspection reports. */
   TWILIO_INSPECTION_TEMPLATE_SID: z.string().optional(),
+  /** Approved Utility templates (HX…). When unset, WhatsApp falls back to free-form session messages. */
+  TWILIO_SERVICE_REMINDER_TEMPLATE_SID: z.string().optional(),
+  TWILIO_PAYMENT_PENDING_TEMPLATE_SID: z.string().optional(),
+  TWILIO_OWNER_PLAN_ACTIVATED_TEMPLATE_SID: z.string().optional(),
+  TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID: z.string().optional(),
+  /** Approved CTA template owner_trial_started_login ({{1}}=name, {{2}}=days, button=Login). */
+  TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID: z.string().optional(),
+  /** Marketing CTA with a fixed portal button URL and no variables. */
+  TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID: z.string().optional(),
   /** Default +91; set +1 etc. if your users are not in India */
   TWILIO_TO_NUMBER_PREFIX: z.string().optional(),
   /**
@@ -107,6 +116,14 @@ export const env = schema.parse({
   TWILIO_FROM_NUMBER: trimOpt(process.env.TWILIO_FROM_NUMBER),
   TWILIO_WHATSAPP_FROM: trimOpt(process.env.TWILIO_WHATSAPP_FROM),
   TWILIO_INSPECTION_TEMPLATE_SID: trimOpt(process.env.TWILIO_INSPECTION_TEMPLATE_SID),
+  TWILIO_SERVICE_REMINDER_TEMPLATE_SID: trimOpt(process.env.TWILIO_SERVICE_REMINDER_TEMPLATE_SID),
+  TWILIO_PAYMENT_PENDING_TEMPLATE_SID: trimOpt(process.env.TWILIO_PAYMENT_PENDING_TEMPLATE_SID),
+  TWILIO_OWNER_PLAN_ACTIVATED_TEMPLATE_SID: trimOpt(
+    process.env.TWILIO_OWNER_PLAN_ACTIVATED_TEMPLATE_SID
+  ),
+  TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID),
+  TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID),
+  TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID: trimOpt(process.env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID),
   TWILIO_TO_NUMBER_PREFIX: trimOpt(process.env.TWILIO_TO_NUMBER_PREFIX),
   RESEND_API_KEY: trimOpt(process.env.RESEND_API_KEY),
   RESEND_WEBHOOK_SECRET: trimOpt(process.env.RESEND_WEBHOOK_SECRET),

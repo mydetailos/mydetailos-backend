@@ -5,6 +5,8 @@ import {
   buildOwnerPlanActivatedWhatsAppMessage,
   buildOwnerTrialStartedSmsMessage,
   buildOwnerTrialStartedWhatsAppMessage,
+  ownerPlanActivatedTemplateVariables,
+  ownerTrialStartedTemplateVariables,
 } from "../../lib/owner-trial-whatsapp.js";
 import { isResendConfigured, sendViaResend } from "../../services/resend-send.js";
 import {
@@ -13,6 +15,8 @@ import {
   normalizePhoneToE164,
   sendTransactionalSms,
   sendWhatsAppMessage,
+  whatsappTemplateOrBody,
+  type WhatsAppTemplateSend,
 } from "../../services/twilio-sms.service.js";
 import { sendUserCredentialsEmail } from "../auth/onboarding-credentials-email.service.js";
 
@@ -118,7 +122,17 @@ export async function notifyOwnerTrialStarted(opts: {
 
   if (opts.phone && isTwilioWhatsAppEnabled()) {
     try {
-      const result = await sendWhatsAppMessage(opts.phone, waBody);
+      const result = await sendWhatsAppMessage(
+        opts.phone,
+        whatsappTemplateOrBody(
+          env.TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID,
+          ownerTrialStartedTemplateVariables({
+            ownerName: opts.ownerName,
+            trialDays: opts.trialDays,
+          }),
+          waBody
+        )
+      );
       const fail = waFailed(result);
       if (fail) {
         sent.errors.whatsapp = fail;
@@ -148,6 +162,7 @@ async function sendOwnerChannels(opts: {
   email: string;
   phone: string;
   waBody: string;
+  waPayload?: string | WhatsAppTemplateSend;
   smsBody: string;
   emailSubject: string;
   logTag: string;
@@ -189,7 +204,7 @@ async function sendOwnerChannels(opts: {
 
   if (opts.phone && isTwilioWhatsAppEnabled()) {
     try {
-      const result = await sendWhatsAppMessage(opts.phone, opts.waBody);
+      const result = await sendWhatsAppMessage(opts.phone, opts.waPayload ?? opts.waBody);
       const fail = waFailed(result);
       if (fail) sent.errors.whatsapp = fail;
       else sent.whatsapp = true;
@@ -274,6 +289,20 @@ export async function notifyOwnerPlanActivated(opts: {
     email: owner?.email || "",
     phone: owner?.phone || "",
     waBody,
+    waPayload: whatsappTemplateOrBody(
+      env.TWILIO_OWNER_PLAN_ACTIVATED_TEMPLATE_SID,
+      ownerPlanActivatedTemplateVariables({
+        ownerName: owner?.name || "there",
+        organizationName: opts.organizationName,
+        planName: opts.planName,
+        termLabel: opts.termLabel,
+        amount: opts.amount,
+        loginUrl: login,
+        expiresAt: expiresLabel,
+        billNumber: opts.billNumber,
+      }),
+      waBody
+    ),
     smsBody,
     emailSubject: subject,
     logTag: "plan-activated-notify",

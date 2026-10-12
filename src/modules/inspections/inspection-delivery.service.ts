@@ -43,6 +43,50 @@ function sendItem(row: {
   };
 }
 
+function textValue(value: unknown, fallback: string): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || fallback;
+}
+
+function healthLabel(value: unknown): string {
+  const raw = textValue(value, "N/A");
+  if (raw === "N/A") return raw;
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+}
+
+function vehicleLabel(snapshot: Record<string, unknown>): string {
+  const registration = textValue(snapshot.vehicleRegistration ?? snapshot.registrationNumber, "");
+  const model = textValue(
+    snapshot.vehicleMakeModel,
+    [snapshot.vehicleMake, snapshot.vehicleModel].filter((part) => typeof part === "string" && part.trim()).join(" ")
+  );
+  if (registration && model) return `${registration} (${model})`;
+  return registration || model || "your vehicle";
+}
+
+/** Variables for approved template `inspection_report_v2`. */
+function inspectionTemplateVariables(input: {
+  documentUrl: string;
+  customerName: string;
+  vehicle: string;
+  reportNumber: string;
+  workshopName: string;
+  overallHealth: string;
+  address: string;
+  phone: string;
+}): Record<string, string> {
+  return {
+    "1": input.documentUrl,
+    "2": input.customerName,
+    "3": input.vehicle,
+    "4": input.reportNumber,
+    "5": input.workshopName,
+    "6": input.overallHealth,
+    "7": input.address,
+    "8": input.phone,
+  };
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -139,7 +183,10 @@ export async function sendInspectionReport(input: {
     if (!pdf) throw new Error("The canonical inspection PDF could not be read from private storage.");
     const snapshot = version.data && typeof version.data === "object" ? version.data as Record<string, unknown> : {};
     const reportNumber = String(report.reportNumber);
-    const customerName = String(snapshot.customerName ?? "Customer");
+    const customerName = textValue(snapshot.customerName, "Customer");
+    const branding = snapshot.organizationBranding && typeof snapshot.organizationBranding === "object"
+      ? snapshot.organizationBranding as Record<string, unknown>
+      : {};
 
     if (input.channel === "EMAIL") {
       const result = await sendViaResend({
@@ -175,7 +222,21 @@ export async function sendInspectionReport(input: {
       reportNumber,
       customerName,
       statusCallbackUrl: callback.toString(),
-      ...(templateSid ? { contentSid: templateSid } : {}),
+      ...(templateSid
+        ? {
+            contentSid: templateSid,
+            contentVariables: inspectionTemplateVariables({
+              documentUrl,
+              customerName,
+              vehicle: vehicleLabel(snapshot),
+              reportNumber,
+              workshopName: textValue(branding.businessName, "My Detail OS"),
+              overallHealth: healthLabel(snapshot.computedOverallRating),
+              address: textValue(branding.businessAddress, textValue(snapshot.branchAddress, "N/A")),
+              phone: textValue(branding.businessPhone, textValue(branding.businessWhatsApp, "the workshop")),
+            }),
+          }
+        : {}),
     });
     if (provider.twilioErrorCode) throw new Error(provider.twilioErrorMessage ?? `Twilio error ${provider.twilioErrorCode}`);
     await prisma.inspectionSendLog.updateMany({

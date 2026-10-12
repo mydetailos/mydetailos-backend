@@ -1614,6 +1614,109 @@ export async function restoreOrganization(req: Request, res: Response, next: Nex
   }
 }
 
+// ─── DELETE /api/platform/organizations/:orgId ───────────────────────────────
+
+export async function deletePlatformOrganization(req: Request, res: Response, next: NextFunction) {
+  try {
+    const orgId = String(req.params["orgId"] ?? "");
+    if (!orgId) throw new AppHttpError(400, "orgId is required.", "MISSING_PARAM");
+    const actor = actorFromReq(req);
+
+    const org = await prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { id: true, name: true, slug: true },
+    });
+    if (!org) throw new AppHttpError(404, "Organization not found.", "NOT_FOUND");
+
+    // Safeguard: Do not delete if the PLATFORM_OWNER account is anchored to this organization
+    const platformOwner = await prisma.user.findFirst({
+      where: { organizationId: orgId, role: "PLATFORM_OWNER" },
+    });
+    if (platformOwner) {
+      throw new AppHttpError(
+        400,
+        "Cannot delete this organization because the Platform Owner user is attached to it. Please reassign the platform owner first.",
+        "PLATFORM_OWNER_ATTACHED"
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Inspections
+      await tx.inspectionSendLog.deleteMany({ where: { organizationId: orgId } });
+      await tx.inspectionUpload.deleteMany({ where: { organizationId: orgId } });
+      await tx.inspectionReportVersion.deleteMany({
+        where: { report: { organizationId: orgId } },
+      });
+      await tx.inspectionReport.deleteMany({ where: { organizationId: orgId } });
+      await tx.inspectionTemplate.deleteMany({ where: { organizationId: orgId } });
+
+      // 2. AppJsonRow
+      await tx.appJsonRow.deleteMany({ where: { organizationId: orgId } });
+
+      // 3. Parties & related child tables
+      const parties = await tx.party.findMany({
+        where: { organizationId: orgId },
+        select: { id: true },
+      });
+      const partyIds = parties.map((p) => p.id);
+      if (partyIds.length > 0) {
+        await tx.partyHidden.deleteMany({ where: { partyId: { in: partyIds } } });
+        await tx.partyCustomField.deleteMany({ where: { partyId: { in: partyIds } } });
+        await tx.partyBankAccount.deleteMany({ where: { partyId: { in: partyIds } } });
+        await tx.partyShippingAddress.deleteMany({ where: { partyId: { in: partyIds } } });
+        await tx.party.deleteMany({ where: { organizationId: orgId } });
+      }
+
+      // 4. Vehicles & Customers
+      await tx.vehicle.deleteMany({ where: { organizationId: orgId } });
+      await tx.customer.deleteMany({ where: { organizationId: orgId } });
+
+      // 5. Appointments
+      await tx.appointment.deleteMany({ where: { organizationId: orgId } });
+
+      // 6. Attendance & Users
+      const branches = await tx.branch.findMany({
+        where: { organizationId: orgId },
+        select: { id: true },
+      });
+      const branchIds = branches.map((b) => b.id);
+      if (branchIds.length > 0) {
+        await tx.attendance.deleteMany({ where: { branchId: { in: branchIds } } });
+      }
+      await tx.user.deleteMany({ where: { organizationId: orgId } });
+
+      // 7. Branches
+      await tx.branch.deleteMany({ where: { organizationId: orgId } });
+
+      // 8. Subscriptions, Payments, Bills, Referrals
+      await tx.subscriptionBill.deleteMany({ where: { organizationId: orgId } });
+      await tx.subscriptionPayment.deleteMany({ where: { organizationId: orgId } });
+      await tx.organizationSubscription.deleteMany({ where: { organizationId: orgId } });
+      await tx.referralTransaction.deleteMany({
+        where: { wallet: { organizationId: orgId } },
+      });
+      await tx.referralWallet.deleteMany({ where: { organizationId: orgId } });
+      await tx.platformReferralCode.deleteMany({ where: { organizationId: orgId } });
+      await tx.platformAuditLog.deleteMany({ where: { organizationId: orgId } });
+
+      // 9. Finally, the Organization
+      await tx.organization.delete({ where: { id: orgId } });
+    });
+
+    await writePlatformAuditLog({
+      organizationId: null,
+      actor,
+      action: "organization.deleted",
+      before: { id: org.id, name: org.name, slug: org.slug },
+      after: null,
+    });
+
+    res.json({ data: { deleted: true, organizationId: orgId, name: org.name }, error: null });
+  } catch (e) {
+    next(e);
+  }
+}
+
 
 // ─── POST /api/platform/organizations/provision ──────────────────────────────
 

@@ -18,15 +18,17 @@ export function buildOwnerTrialStartedWhatsAppMessage(opts: {
   const lines = [
     `Hi ${first},`,
     ``,
-    `Your ${days} day trial for MY DETAIL OS has started 🚗.`,
+    `Your ${days} day trial for My Detail OS has started 🚗.`,
     ``,
-    `Start using MY DETAIL OS to manage Job Cards, Billing, Customers, Inventory and more.`,
+    `Click the button below to login and manage your garage operations.`,
     ``,
-    `Login here: ${login}`,
+    `Powered by My Detail OS.`,
   ];
-  if (opts.email) lines.push(`Email: ${opts.email}`);
-  if (opts.temporaryPassword) lines.push(`Temporary password: ${opts.temporaryPassword}`);
-  lines.push(``, `Thank you,`, `Team MY DETAIL OS`);
+  if (opts.email || opts.temporaryPassword) {
+    lines.push(``);
+    if (opts.email) lines.push(`Email: ${opts.email}`);
+    if (opts.temporaryPassword) lines.push(`Temporary password: ${opts.temporaryPassword}`);
+  }
   return lines.join("\n");
 }
 
@@ -96,6 +98,56 @@ export function buildOwnerPlanActivatedWhatsAppMessage(opts: {
   if (opts.expiresAt) lines.push(`Valid until: ${opts.expiresAt}`);
   lines.push(``, `Login here: ${login}`, ``, `Thank you,`, `Team MY DETAIL OS`);
   return lines.join("\n");
+}
+
+/** Variables for Twilio template `owner_plan_activated_exact`. */
+export function ownerPlanActivatedTemplateVariables(opts: {
+  ownerName: string;
+  organizationName: string;
+  planName: string;
+  termLabel: string;
+  amount: number;
+  loginUrl: string;
+  expiresAt?: string | null;
+  billNumber?: string | null;
+}): Record<string, string> {
+  return {
+    "1": firstNameFrom(opts.ownerName),
+    "2": opts.organizationName,
+    "3": opts.planName,
+    "4": opts.termLabel,
+    "5": `₹${opts.amount.toFixed(2)}`,
+    "6": opts.billNumber?.trim() || "N/A",
+    "7": opts.expiresAt?.trim() || "see app",
+    "8": opts.loginUrl.replace(/\/$/, ""),
+  };
+}
+
+/** Variables for Twilio template `owner_trial_started_login`. Button URL is fixed to the login page. */
+export function ownerTrialStartedTemplateVariables(opts: {
+  ownerName: string;
+  trialDays: number;
+}): Record<string, string> {
+  const days = Math.max(1, Math.floor(opts.trialDays));
+  return {
+    "1": firstNameFrom(opts.ownerName),
+    "2": String(days),
+  };
+}
+
+/** Variables for Twilio template `owner_payment_link`. */
+export function ownerPaymentLinkTemplateVariables(opts: {
+  ownerName?: string | null;
+  organizationName: string;
+  amount: number;
+  paymentLinkUrl: string;
+}): Record<string, string> {
+  return {
+    "1": opts.ownerName?.trim() ? firstNameFrom(opts.ownerName) : "there",
+    "2": opts.organizationName,
+    "3": `₹${opts.amount.toFixed(2)}`,
+    "4": opts.paymentLinkUrl,
+  };
 }
 
 export function buildOwnerPlanActivatedSmsMessage(opts: {

@@ -34,6 +34,7 @@ import {
   postPlatformMessagingTest,
   suspendOrganization,
   restoreOrganization,
+  deletePlatformOrganization,
   postPlatformProvisionOrganization,
   postPlatformConvertTrial,
   listPlatformContacts,
@@ -81,9 +82,10 @@ platformRouter.post(
 platformRouter.post("/organizations/:orgId/subscription/convert-trial", postPlatformConvertTrial);
 platformRouter.post("/organizations/:orgId/branches", postPlatformOrganizationBranch);
 
-// Suspend / restore
+// Suspend / restore / delete
 platformRouter.post("/organizations/:orgId/suspend", suspendOrganization);
 platformRouter.post("/organizations/:orgId/restore", restoreOrganization);
+platformRouter.delete("/organizations/:orgId", deletePlatformOrganization);
 platformRouter.get("/organizations/:orgId/activity", listPlatformOrganizationActivity);
 
 // Cross-org data endpoints

@@ -7,7 +7,11 @@
 import { prisma } from "../../lib/prisma.js";
 import { SINGLETON_ENTITY_ID, singletonStorageEntityId } from "../../constants/json-collections.js";
 import { env } from "../../config/env.js";
-import { isTwilioWhatsAppEnabled, sendWhatsAppMessage } from "../../services/twilio-sms.service.js";
+import {
+  isTwilioWhatsAppEnabled,
+  sendWhatsAppMessage,
+  whatsappTemplateOrBody,
+} from "../../services/twilio-sms.service.js";
 import { buildCustomerCredentialsWhatsAppMessage } from "../../lib/customer-credentials-whatsapp.js";
 import { upsertCollectionItem } from "../collections/app-json-store.js";
 import { ensureOrganizationHasSlug } from "../../lib/ensure-organization-slug.js";
@@ -109,7 +113,10 @@ export async function sendCustomerCredentialsWhatsApp(opts: {
   }
 
   try {
-    await sendWhatsAppMessage(opts.phone, message);
+    await sendWhatsAppMessage(
+      opts.phone,
+      whatsappTemplateOrBody(env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID, {}, message)
+    );
     await logWhatsAppAttempt({
       organizationId: opts.organizationId,
       customerId: opts.customerId,

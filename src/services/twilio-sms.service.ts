@@ -90,17 +90,26 @@ export async function sendWhatsAppInspectionDocument(params: {
   customerName: string;
   statusCallbackUrl: string;
   contentSid?: string;
+  /** Keys match `inspection_report_v2`: 1 PDF URL, 2 name, 3 vehicle, 4 report, 5 workshop, 6 health, 7 address, 8 phone. */
+  contentVariables?: Record<string, string>;
 }): Promise<TwilioWhatsAppSendResult> {
   if (!isTwilioWhatsAppEnabled()) throw new Error("Twilio WhatsApp is not configured.");
   const from = whatsappChannelAddress(env.TWILIO_WHATSAPP_FROM!.trim());
   const templateContent = params.contentSid
     ? {
         contentSid: params.contentSid,
-        contentVariables: JSON.stringify({
-          1: params.documentUrl,
-          2: params.reportNumber,
-          3: params.customerName,
-        }),
+        contentVariables: JSON.stringify(
+          params.contentVariables ?? {
+            1: params.documentUrl,
+            2: params.customerName,
+            3: "your vehicle",
+            4: params.reportNumber,
+            5: "My Detail OS",
+            6: "N/A",
+            7: "N/A",
+            8: "the workshop",
+          }
+        ),
       }
     : {
         body: `Vehicle inspection report ${params.reportNumber} for ${params.customerName}`,
@@ -159,6 +168,17 @@ export type WhatsAppTemplateSend = {
   /** Twilio expects JSON like `{ "1": "…", "2": "…" }` — string keys must match template variables. */
   contentVariables?: Record<string, string>;
 };
+
+/** Use an approved Content SID when set; otherwise free-form body (24-hour session only). */
+export function whatsappTemplateOrBody(
+  contentSid: string | undefined,
+  contentVariables: Record<string, string>,
+  fallbackBody: string
+): string | WhatsAppTemplateSend {
+  const sid = contentSid?.trim();
+  if (!sid) return fallbackBody;
+  return { contentSid: sid, contentVariables };
+}
 
 export type TwilioWhatsAppSendResult = {
   sid: string;

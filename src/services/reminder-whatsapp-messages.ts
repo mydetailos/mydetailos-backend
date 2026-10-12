@@ -85,6 +85,45 @@ export function buildPaymentPendingReminderWhatsAppMessage(opts: {
   return lines.join("\n");
 }
 
+/** Variables for Twilio template `service_reminder_exact`. */
+export function serviceReminderTemplateVariables(
+  reminder: ReminderRecord,
+  businessName = "My Detail OS"
+): Record<string, string> {
+  const customerName = reminder.customerName.trim() || "there";
+  const firstName = customerName.split(/\s+/)[0] || customerName;
+  const typeLabel = TYPE_LABEL[String(reminder.type ?? "")] ?? String(reminder.type ?? "Service");
+  const vehicle =
+    (reminder.vehicleRegNumber || reminder.vehicleMakeModel || "your vehicle").trim() || "your vehicle";
+  const brand = businessName.trim() || "My Detail OS";
+  return {
+    "1": firstName,
+    "2": brand,
+    "3": typeLabel,
+    "4": customerName,
+    "5": vehicle,
+    "6": formatDue(reminder.dueDate),
+    "7": reminder.notes?.trim() || "Please book a slot when convenient",
+  };
+}
+
+/** Variables for Twilio template `payment_pending_exact_v2`. */
+export function paymentPendingTemplateVariables(opts: {
+  pendingAmount: number;
+  statementUrl: string;
+  businessName?: string;
+  invoiceUrl?: string;
+  invoiceNumber?: string;
+}): Record<string, string> {
+  return {
+    "1": formatInr(opts.pendingAmount),
+    "2": (opts.invoiceNumber || "invoice").trim(),
+    "3": (opts.invoiceUrl || opts.statementUrl).trim(),
+    "4": opts.statementUrl.trim(),
+    "5": (opts.businessName || "My Detail OS").trim(),
+  };
+}
+
 export function publicInvoiceShareUrl(baseUrl: string, invoiceId: string): string {
   return `${baseUrl.replace(/\/$/, "")}/public-invoice/${encodeURIComponent(invoiceId)}`;
 }

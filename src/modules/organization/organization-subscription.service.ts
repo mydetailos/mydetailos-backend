@@ -59,9 +59,13 @@ import {
   normalizePhoneToE164,
   sendTransactionalSms,
   sendWhatsAppMessage,
+  whatsappTemplateOrBody,
 } from "../../services/twilio-sms.service.js";
 import { isResendConfigured, sendViaResend } from "../../services/resend-send.js";
-import { buildOwnerPaymentLinkWhatsAppMessage } from "../../lib/owner-trial-whatsapp.js";
+import {
+  buildOwnerPaymentLinkWhatsAppMessage,
+  ownerPaymentLinkTemplateVariables,
+} from "../../lib/owner-trial-whatsapp.js";
 import { notifyOwnerPlanActivated } from "./owner-trial-notify.service.js";
 import { ensureOrgShareReferralCode } from "./org-share-referral.service.js";
 
@@ -2539,7 +2543,19 @@ export async function createAdminPaymentLink(
         await sendTransactionalSms(normalizePhoneToE164(customerPhone), msg);
         sentVia.push("sms");
       } else if (channel === "whatsapp" && customerPhone && isTwilioWhatsAppEnabled()) {
-        await sendWhatsAppMessage(customerPhone, waMsg);
+        await sendWhatsAppMessage(
+          customerPhone,
+          whatsappTemplateOrBody(
+            env.TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID,
+            ownerPaymentLinkTemplateVariables({
+              ownerName: customerName,
+              organizationName: org.name,
+              amount: breakdown.finalAmount,
+              paymentLinkUrl: link.shortUrl,
+            }),
+            waMsg
+          )
+        );
         sentVia.push("whatsapp");
       }
     } catch {
@@ -2626,7 +2642,19 @@ export async function resendAdminPaymentLink(
     if (!isTwilioWhatsAppEnabled()) {
       throw new AppHttpError(503, "WhatsApp is not configured", "WHATSAPP_NOT_CONFIGURED");
     }
-    await sendWhatsAppMessage(phone, waMsg);
+    await sendWhatsAppMessage(
+      phone,
+      whatsappTemplateOrBody(
+        env.TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID,
+        ownerPaymentLinkTemplateVariables({
+          ownerName: owner?.name,
+          organizationName: payment.organization.name,
+          amount: Number(payment.amount ?? 0),
+          paymentLinkUrl,
+        }),
+        waMsg
+      )
+    );
   }
 
   await prisma.platformAuditLog.create({

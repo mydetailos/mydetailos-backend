@@ -1,5 +1,10 @@
+import { env } from "../config/env.js";
 import { invoiceOutstanding } from "../lib/party-ledger.js";
 import type { Invoice } from "../types/finance-documents.js";
+import {
+  whatsappTemplateOrBody,
+  type WhatsAppTemplateSend,
+} from "./twilio-sms.service.js";
 import {
   advancePaymentReminderAfterSend,
   markReminderSentForPeriod,
@@ -11,8 +16,10 @@ import { normalizeReminderKind } from "./reminder-schedule.js";
 import {
   buildPaymentPendingReminderWhatsAppMessage,
   buildServiceReminderWhatsAppMessage,
+  paymentPendingTemplateVariables,
   publicCustomerLedgerShareUrl,
   publicInvoiceShareUrl,
+  serviceReminderTemplateVariables,
 } from "./reminder-whatsapp-messages.js";
 
 export type ReminderJobOrgSettings = {
@@ -37,7 +44,7 @@ export type ProcessOrgRemindersDeps = {
   invoices: Invoice[];
   settings: ReminderJobOrgSettings;
   publicBaseUrl: string;
-  sendWhatsApp: (phone: string, message: string) => Promise<void>;
+  sendWhatsApp: (phone: string, message: string | WhatsAppTemplateSend) => Promise<void>;
   saveReminder: (reminder: ReminderRecord) => Promise<void>;
   now?: Date;
 };
@@ -47,22 +54,29 @@ function buildMessage(
   settings: ReminderJobOrgSettings,
   publicBaseUrl: string,
   getOutstanding: (invoiceId: string) => number | undefined
-): string {
+): string | WhatsAppTemplateSend {
+  const brand = settings.businessName || "My Detail OS";
   if (normalizeReminderKind(reminder.kind) === "PAYMENT") {
     const amount = paymentOutstandingForReminder(reminder, getOutstanding);
-    return buildPaymentPendingReminderWhatsAppMessage({
+    const payload = {
       pendingAmount: amount,
       statementUrl: publicCustomerLedgerShareUrl(publicBaseUrl, reminder.customerId),
-      businessName: settings.businessName || "My Detail OS",
+      businessName: brand,
       invoiceUrl: reminder.invoiceId
         ? publicInvoiceShareUrl(publicBaseUrl, reminder.invoiceId)
         : undefined,
       invoiceNumber: reminder.invoiceNumber,
-    });
+    };
+    return whatsappTemplateOrBody(
+      env.TWILIO_PAYMENT_PENDING_TEMPLATE_SID,
+      paymentPendingTemplateVariables(payload),
+      buildPaymentPendingReminderWhatsAppMessage(payload)
+    );
   }
-  return buildServiceReminderWhatsAppMessage(
-    reminder,
-    settings.businessName || "My Detail OS"
+  return whatsappTemplateOrBody(
+    env.TWILIO_SERVICE_REMINDER_TEMPLATE_SID,
+    serviceReminderTemplateVariables(reminder, brand),
+    buildServiceReminderWhatsAppMessage(reminder, brand)
   );
 }
 

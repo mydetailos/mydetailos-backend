@@ -131,7 +131,9 @@ describe("processOrganizationReminders", () => {
       publicBaseUrl: "http://localhost:3000",
       sendWhatsApp: async (phone, message) => {
         sent.push(phone);
-        assert.match(message, /Ada|Swift|General Service/i);
+        const hay =
+          typeof message === "string" ? message : JSON.stringify(message.contentVariables ?? {});
+        assert.match(hay, /Ada|Swift|General Service|KA01AB1234/i);
       },
       saveReminder: async (r) => {
         saved.push(r);
