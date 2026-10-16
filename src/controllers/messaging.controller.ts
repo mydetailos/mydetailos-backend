@@ -171,16 +171,41 @@ export async function postWhatsApp(req: Request, res: Response, next: NextFuncti
       bodyText = `Template: ${body.contentSid} with variables: ${JSON.stringify(body.contentVariables || {})}`;
     }
     try {
-      if (body.message) {
-        await sendWhatsAppMessage(body.phone, body.message);
-      } else {
-        await sendWhatsAppMessage(body.phone, {
-          contentSid: body.contentSid!,
-          contentVariables: body.contentVariables,
+      const sendResult = body.message
+        ? await sendWhatsAppMessage(body.phone, body.message)
+        : await sendWhatsAppMessage(body.phone, {
+            contentSid: body.contentSid!,
+            contentVariables: body.contentVariables,
+          });
+
+      if (
+        sendResult.status === "failed" ||
+        sendResult.status === "undelivered" ||
+        (typeof sendResult.twilioErrorCode === "number" && sendResult.twilioErrorCode > 0)
+      ) {
+        const errorDetail =
+          sendResult.twilioErrorMessage ||
+          `Twilio delivery failed with status: ${sendResult.status}${sendResult.twilioErrorCode ? ` (error code: ${sendResult.twilioErrorCode})` : ""}`;
+        const msgLog = await logMessage({
+          organizationId: req.auth?.organizationId,
+          type: "whatsapp",
+          recipient: body.phone,
+          body: bodyText,
+          status: "failed",
+          error: errorDetail,
         });
+        res.status(502).json({
+          data: { ok: false, message: msgLog },
+          error: {
+            message: errorDetail,
+            code: "WHATSAPP_SEND_FAILED",
+          },
+        });
+        return;
       }
+
       const msgLog = await logMessage({
-      organizationId: req.auth?.organizationId,
+        organizationId: req.auth?.organizationId,
         type: "whatsapp",
         recipient: body.phone,
         body: bodyText,

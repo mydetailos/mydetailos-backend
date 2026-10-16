@@ -38,6 +38,29 @@ describe("Customer Welcome WhatsApp Template & Parameters", () => {
     assert.equal(resolved, expectedSid);
   });
 
+  it("verifies all 5 pre-approved Twilio WhatsApp Content Template SIDs are configured", () => {
+    assert.equal(
+      env.TWILIO_CUSTOMER_WELCOME_CONTENT_SID?.trim() || env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID?.trim(),
+      "HX2656ed64ee960fb6995f9211b4b71c72"
+    );
+    assert.equal(
+      env.TWILIO_AUTH_OTP_CONTENT_SID?.trim() || env.TWILIO_OTP_TEMPLATE_SID?.trim(),
+      "HXf1c8e1cbd228b0ab0700445712169f1e"
+    );
+    assert.equal(
+      env.TWILIO_SERVICE_REMINDER_CONTENT_SID?.trim() || env.TWILIO_SERVICE_REMINDER_TEMPLATE_SID?.trim(),
+      "HX7eb233c8252b14bee9403c8eb4bd1fea"
+    );
+    assert.equal(
+      env.TWILIO_PAYMENT_PENDING_CONTENT_SID?.trim() || env.TWILIO_PAYMENT_PENDING_TEMPLATE_SID?.trim(),
+      "HX429538b3d8638a6ef9c0aff78dc0c933"
+    );
+    assert.equal(
+      env.TWILIO_INSPECTION_REPORT_CONTENT_SID?.trim() || env.TWILIO_INSPECTION_TEMPLATE_SID?.trim(),
+      "HXe3ca0b811651060e2d338d598eef2270"
+    );
+  });
+
   it("serializes contentVariables to JSON matching Twilio Content API expectations", () => {
     const vars = customerCredentialsTemplateVariables({
       customerName: "Amit Verma",

@@ -51,19 +51,23 @@ const schema = z.object({
    */
   TWILIO_WHATSAPP_FROM: z.string().optional(),
   /** Approved Twilio Content SID with a document media header for inspection reports. */
+  TWILIO_INSPECTION_REPORT_CONTENT_SID: z.string().optional(),
   TWILIO_INSPECTION_TEMPLATE_SID: z.string().optional(),
   /** Approved Utility templates (HX…). When unset, WhatsApp falls back to free-form session messages. */
+  TWILIO_SERVICE_REMINDER_CONTENT_SID: z.string().optional(),
   TWILIO_SERVICE_REMINDER_TEMPLATE_SID: z.string().optional(),
+  TWILIO_PAYMENT_PENDING_CONTENT_SID: z.string().optional(),
   TWILIO_PAYMENT_PENDING_TEMPLATE_SID: z.string().optional(),
   TWILIO_OWNER_PLAN_ACTIVATED_TEMPLATE_SID: z.string().optional(),
   TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID: z.string().optional(),
   /** Approved CTA template owner_trial_started_login ({{1}}=name, {{2}}=days, button=Login). */
   TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID: z.string().optional(),
-  /** Marketing CTA with a fixed portal button URL and no variables. */
-  TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID: z.string().optional(),
   /** Approved WhatsApp Content template (HX…) for Customer Welcome message on account creation. */
   TWILIO_CUSTOMER_WELCOME_CONTENT_SID: z.string().optional(),
+  /** Marketing CTA with a fixed portal button URL and no variables. */
+  TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID: z.string().optional(),
   /** Approved WhatsApp Authentication template (Content SID: HX…) for Login OTP. */
+  TWILIO_AUTH_OTP_CONTENT_SID: z.string().optional(),
   TWILIO_OTP_TEMPLATE_SID: z.string().optional(),
   /** Default delivery channel for login OTP ('whatsapp' | 'sms' | 'auto'). Defaults to 'auto'. */
   OTP_DELIVERY_CHANNEL: z.enum(["whatsapp", "sms", "auto"]).default("auto"),
@@ -123,17 +127,41 @@ export const env = schema.parse({
   TWILIO_API_KEY_SECRET: trimOpt(process.env.TWILIO_API_KEY_SECRET),
   TWILIO_FROM_NUMBER: trimOpt(process.env.TWILIO_FROM_NUMBER),
   TWILIO_WHATSAPP_FROM: trimOpt(process.env.TWILIO_WHATSAPP_FROM),
-  TWILIO_INSPECTION_TEMPLATE_SID: trimOpt(process.env.TWILIO_INSPECTION_TEMPLATE_SID),
-  TWILIO_SERVICE_REMINDER_TEMPLATE_SID: trimOpt(process.env.TWILIO_SERVICE_REMINDER_TEMPLATE_SID),
-  TWILIO_PAYMENT_PENDING_TEMPLATE_SID: trimOpt(process.env.TWILIO_PAYMENT_PENDING_TEMPLATE_SID),
+  TWILIO_INSPECTION_REPORT_CONTENT_SID: trimOpt(
+    process.env.TWILIO_INSPECTION_REPORT_CONTENT_SID ?? process.env.TWILIO_INSPECTION_TEMPLATE_SID
+  ),
+  TWILIO_INSPECTION_TEMPLATE_SID: trimOpt(
+    process.env.TWILIO_INSPECTION_REPORT_CONTENT_SID ?? process.env.TWILIO_INSPECTION_TEMPLATE_SID
+  ),
+  TWILIO_SERVICE_REMINDER_CONTENT_SID: trimOpt(
+    process.env.TWILIO_SERVICE_REMINDER_CONTENT_SID ?? process.env.TWILIO_SERVICE_REMINDER_TEMPLATE_SID
+  ),
+  TWILIO_SERVICE_REMINDER_TEMPLATE_SID: trimOpt(
+    process.env.TWILIO_SERVICE_REMINDER_CONTENT_SID ?? process.env.TWILIO_SERVICE_REMINDER_TEMPLATE_SID
+  ),
+  TWILIO_PAYMENT_PENDING_CONTENT_SID: trimOpt(
+    process.env.TWILIO_PAYMENT_PENDING_CONTENT_SID ?? process.env.TWILIO_PAYMENT_PENDING_TEMPLATE_SID
+  ),
+  TWILIO_PAYMENT_PENDING_TEMPLATE_SID: trimOpt(
+    process.env.TWILIO_PAYMENT_PENDING_CONTENT_SID ?? process.env.TWILIO_PAYMENT_PENDING_TEMPLATE_SID
+  ),
   TWILIO_OWNER_PLAN_ACTIVATED_TEMPLATE_SID: trimOpt(
     process.env.TWILIO_OWNER_PLAN_ACTIVATED_TEMPLATE_SID
   ),
   TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID),
   TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID),
-  TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID: trimOpt(process.env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID),
-  TWILIO_CUSTOMER_WELCOME_CONTENT_SID: trimOpt(process.env.TWILIO_CUSTOMER_WELCOME_CONTENT_SID),
-  TWILIO_OTP_TEMPLATE_SID: trimOpt(process.env.TWILIO_OTP_TEMPLATE_SID),
+  TWILIO_CUSTOMER_WELCOME_CONTENT_SID: trimOpt(
+    process.env.TWILIO_CUSTOMER_WELCOME_CONTENT_SID ?? process.env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID
+  ),
+  TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID: trimOpt(
+    process.env.TWILIO_CUSTOMER_WELCOME_CONTENT_SID ?? process.env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID
+  ),
+  TWILIO_AUTH_OTP_CONTENT_SID: trimOpt(
+    process.env.TWILIO_AUTH_OTP_CONTENT_SID ?? process.env.TWILIO_OTP_TEMPLATE_SID
+  ),
+  TWILIO_OTP_TEMPLATE_SID: trimOpt(
+    process.env.TWILIO_AUTH_OTP_CONTENT_SID ?? process.env.TWILIO_OTP_TEMPLATE_SID
+  ),
   OTP_DELIVERY_CHANNEL: (trimOpt(process.env.OTP_DELIVERY_CHANNEL) as "whatsapp" | "sms" | "auto") ?? "auto",
   OTP_SMS_ENABLED: process.env.OTP_SMS_ENABLED === undefined ? true : process.env.OTP_SMS_ENABLED !== "false",
   TWILIO_TO_NUMBER_PREFIX: trimOpt(process.env.TWILIO_TO_NUMBER_PREFIX),

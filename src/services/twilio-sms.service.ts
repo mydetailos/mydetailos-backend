@@ -46,7 +46,9 @@ export function isTwilioWhatsAppEnabled(): boolean {
 
 /** WhatsApp OTP is ready when Twilio WhatsApp credentials, sender, and OTP template SID are all configured. */
 export function isTwilioWhatsAppOtpEnabled(): boolean {
-  return isTwilioWhatsAppEnabled() && Boolean(env.TWILIO_OTP_TEMPLATE_SID?.trim());
+  const contentSid =
+    env.TWILIO_AUTH_OTP_CONTENT_SID?.trim() || env.TWILIO_OTP_TEMPLATE_SID?.trim();
+  return isTwilioWhatsAppEnabled() && Boolean(contentSid);
 }
 
 /** National number without country code (e.g. 10 digits for India). */
@@ -166,10 +168,11 @@ export async function sendLoginOtpWhatsApp(
       "Twilio WhatsApp is not configured (set TWILIO_ACCOUNT_SID and TWILIO_WHATSAPP_FROM)."
     );
   }
-  const contentSid = env.TWILIO_OTP_TEMPLATE_SID?.trim();
+  const contentSid =
+    env.TWILIO_AUTH_OTP_CONTENT_SID?.trim() || env.TWILIO_OTP_TEMPLATE_SID?.trim();
   if (!contentSid) {
     throw new Error(
-      "WhatsApp OTP template is not configured (set TWILIO_OTP_TEMPLATE_SID)."
+      "WhatsApp OTP template is not configured (set TWILIO_AUTH_OTP_CONTENT_SID or TWILIO_OTP_TEMPLATE_SID)."
     );
   }
   const result = await sendWhatsAppMessage(toPhoneInput, {

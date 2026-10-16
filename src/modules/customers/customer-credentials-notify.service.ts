@@ -132,10 +132,28 @@ export async function sendCustomerCredentialsWhatsApp(opts: {
     "HX2656ed64ee960fb6995f9211b4b71c72";
 
   try {
-    await sendWhatsAppMessage(opts.phone, {
+    const result = await sendWhatsAppMessage(opts.phone, {
       contentSid,
       contentVariables: templateVariables,
     });
+    if (
+      result.status === "failed" ||
+      result.status === "undelivered" ||
+      (typeof result.twilioErrorCode === "number" && result.twilioErrorCode > 0)
+    ) {
+      const reason =
+        result.twilioErrorMessage ||
+        `Twilio delivery failed (status: ${result.status}${result.twilioErrorCode ? `, code: ${result.twilioErrorCode}` : ""})`;
+      await logWhatsAppAttempt({
+        organizationId: opts.organizationId,
+        customerId: opts.customerId,
+        phone: opts.phone,
+        body: message,
+        status: "failed",
+        error: reason,
+      });
+      return { sent: false, reason };
+    }
     await logWhatsAppAttempt({
       organizationId: opts.organizationId,
       customerId: opts.customerId,

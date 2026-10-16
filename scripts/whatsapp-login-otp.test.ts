@@ -211,22 +211,47 @@ describe("WhatsApp Login OTP & Security Hardening", () => {
   });
 
   describe("WhatsApp Configuration & Template Validation", () => {
-    it("reports WhatsApp OTP disabled when TWILIO_OTP_TEMPLATE_SID is missing", () => {
+    it("reports WhatsApp OTP disabled when TWILIO_AUTH_OTP_CONTENT_SID and TWILIO_OTP_TEMPLATE_SID are missing", () => {
       const origSid = env.TWILIO_OTP_TEMPLATE_SID;
+      const origAuthSid = env.TWILIO_AUTH_OTP_CONTENT_SID;
       try {
         (env as any).TWILIO_OTP_TEMPLATE_SID = undefined;
+        (env as any).TWILIO_AUTH_OTP_CONTENT_SID = undefined;
         assert.equal(isTwilioWhatsAppOtpEnabled(), false);
       } finally {
         (env as any).TWILIO_OTP_TEMPLATE_SID = origSid;
+        (env as any).TWILIO_AUTH_OTP_CONTENT_SID = origAuthSid;
+      }
+    });
+
+    it("reports WhatsApp OTP enabled when either TWILIO_AUTH_OTP_CONTENT_SID or TWILIO_OTP_TEMPLATE_SID is present", () => {
+      const origSid = env.TWILIO_OTP_TEMPLATE_SID;
+      const origAuthSid = env.TWILIO_AUTH_OTP_CONTENT_SID;
+      const origWaFrom = env.TWILIO_WHATSAPP_FROM;
+      try {
+        (env as any).TWILIO_WHATSAPP_FROM = "whatsapp:+14155238886";
+        (env as any).TWILIO_OTP_TEMPLATE_SID = undefined;
+        (env as any).TWILIO_AUTH_OTP_CONTENT_SID = "HXf1c8e1cbd228b0ab0700445712169f1e";
+        assert.equal(isTwilioWhatsAppOtpEnabled(), true);
+
+        (env as any).TWILIO_AUTH_OTP_CONTENT_SID = undefined;
+        (env as any).TWILIO_OTP_TEMPLATE_SID = "HXf1c8e1cbd228b0ab0700445712169f1e";
+        assert.equal(isTwilioWhatsAppOtpEnabled(), true);
+      } finally {
+        (env as any).TWILIO_OTP_TEMPLATE_SID = origSid;
+        (env as any).TWILIO_AUTH_OTP_CONTENT_SID = origAuthSid;
+        (env as any).TWILIO_WHATSAPP_FROM = origWaFrom;
       }
     });
 
     it("throws a descriptive error when calling sendLoginOtpWhatsApp without template SID", async () => {
       const origSid = env.TWILIO_OTP_TEMPLATE_SID;
+      const origAuthSid = env.TWILIO_AUTH_OTP_CONTENT_SID;
       const origWaFrom = env.TWILIO_WHATSAPP_FROM;
       try {
         (env as any).TWILIO_WHATSAPP_FROM = "whatsapp:+14155238886";
         (env as any).TWILIO_OTP_TEMPLATE_SID = undefined;
+        (env as any).TWILIO_AUTH_OTP_CONTENT_SID = undefined;
 
         await assert.rejects(
           async () => {
@@ -236,6 +261,7 @@ describe("WhatsApp Login OTP & Security Hardening", () => {
         );
       } finally {
         (env as any).TWILIO_OTP_TEMPLATE_SID = origSid;
+        (env as any).TWILIO_AUTH_OTP_CONTENT_SID = origAuthSid;
         (env as any).TWILIO_WHATSAPP_FROM = origWaFrom;
       }
     });
