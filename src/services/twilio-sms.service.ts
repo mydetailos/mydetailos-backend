@@ -44,6 +44,11 @@ export function isTwilioWhatsAppEnabled(): boolean {
   return isTwilioConfigured() && from;
 }
 
+/** WhatsApp OTP is ready when Twilio WhatsApp credentials, sender, and OTP template SID are all configured. */
+export function isTwilioWhatsAppOtpEnabled(): boolean {
+  return isTwilioWhatsAppEnabled() && Boolean(env.TWILIO_OTP_TEMPLATE_SID?.trim());
+}
+
 /** National number without country code (e.g. 10 digits for India). */
 export function toE164(nationalDigits: string): string {
   const raw = (env.TWILIO_TO_NUMBER_PREFIX ?? "+91").trim();
@@ -146,6 +151,42 @@ export async function sendLoginOtpSms(
     to: e164To,
   });
   return { sid: msg.sid, status: msg.status ?? "unknown" };
+}
+
+/**
+ * Send login OTP via Twilio WhatsApp using an approved Authentication Content Template.
+ * Maps {{1}} to the one-time authentication code.
+ */
+export async function sendLoginOtpWhatsApp(
+  toPhoneInput: string,
+  code: string
+): Promise<TwilioWhatsAppSendResult> {
+  if (!isTwilioWhatsAppEnabled()) {
+    throw new Error(
+      "Twilio WhatsApp is not configured (set TWILIO_ACCOUNT_SID and TWILIO_WHATSAPP_FROM)."
+    );
+  }
+  const contentSid = env.TWILIO_OTP_TEMPLATE_SID?.trim();
+  if (!contentSid) {
+    throw new Error(
+      "WhatsApp OTP template is not configured (set TWILIO_OTP_TEMPLATE_SID)."
+    );
+  }
+  const result = await sendWhatsAppMessage(toPhoneInput, {
+    contentSid,
+    contentVariables: { "1": code },
+  });
+
+  if (
+    result.status === "failed" ||
+    result.status === "undelivered" ||
+    (typeof result.twilioErrorCode === "number" && result.twilioErrorCode > 0)
+  ) {
+    const detail = result.twilioErrorMessage || `Twilio status: ${result.status}`;
+    throw new Error(`WhatsApp OTP delivery failed: ${detail}`);
+  }
+
+  return result;
 }
 
 /** Reuse for appointment/reminder SMS once Twilio is configured. */

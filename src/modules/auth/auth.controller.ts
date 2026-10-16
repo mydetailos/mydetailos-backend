@@ -6,14 +6,19 @@ import { prisma } from "../../lib/prisma.js";
 import { ensureOrganizationHasSlug } from "../../lib/ensure-organization-slug.js";
 import { authenticateUser, signAuthToken, touchUserLastLogin } from "./auth.service.js";
 import {
+  checkOtpSendRateLimits,
+  clearOtpForPhone,
   consumeLoginOtpIfValid,
   findActiveUserByTenDigitPhone,
   issueLoginOtp,
   isDemoLoginOtp,
+  verifyAndConsumeLoginOtp,
 } from "./login-otp.service.js";
 import {
   isTwilioSmsEnabled,
+  isTwilioWhatsAppOtpEnabled,
   sendLoginOtpSms,
+  sendLoginOtpWhatsApp,
   toE164,
 } from "../../services/twilio-sms.service.js";
 
@@ -79,7 +84,8 @@ const createWorkspaceBranchSchema = z.object({
 });
 
 const otpSendSchema = z.object({
-  phone: z.string().regex(/^\d{10}$/),
+  phone: z.string().regex(/^\d{10}$/, "Must be a 10-digit mobile number"),
+  channel: z.enum(["whatsapp", "sms"]).optional(),
 });
 
 const otpVerifySchema = z.object({
@@ -214,10 +220,36 @@ async function authSuccessResponse(user: User, branch: Branch | null) {
   };
 }
 
+function getClientIp(req: Request): string {
+  const fwd = req.headers["x-forwarded-for"];
+  if (typeof fwd === "string" && fwd.trim()) {
+    return fwd.split(",")[0]?.trim() || "unknown";
+  }
+  if (Array.isArray(fwd) && fwd[0]) return String(fwd[0]);
+  return req.ip || "unknown";
+}
+
 export async function sendLoginOtp(req: Request, res: Response, next: NextFunction) {
   const isProduction = process.env.NODE_ENV === "production";
   try {
     const body = otpSendSchema.parse(req.body);
+    const clientIp = getClientIp(req);
+
+    // 1. Rate limiting & resend cooldown check
+    const rateCheck = checkOtpSendRateLimits(body.phone, clientIp);
+    if (!rateCheck.allowed) {
+      res.status(429).json({
+        data: null,
+        error: {
+          message: rateCheck.message,
+          code: rateCheck.reason,
+          retryAfterSeconds: rateCheck.retryAfterSeconds,
+        },
+      });
+      return;
+    }
+
+    // 2. Active user lookup
     const user = await findActiveUserByTenDigitPhone(body.phone);
     if (!user) {
       res.status(404).json({
@@ -226,27 +258,116 @@ export async function sendLoginOtp(req: Request, res: Response, next: NextFuncti
       });
       return;
     }
-    const code = issueLoginOtp(body.phone);
+
+    // 3. Determine delivery channel
+    const smsAllowed = env.OTP_SMS_ENABLED !== false;
+    const requestedChannel =
+      body.channel ?? (env.OTP_DELIVERY_CHANNEL !== "auto" ? env.OTP_DELIVERY_CHANNEL : undefined);
+
+    let chosenChannel: "whatsapp" | "sms" | "log_only";
+    if (requestedChannel === "whatsapp") {
+      chosenChannel = "whatsapp";
+    } else if (requestedChannel === "sms") {
+      if (!smsAllowed) {
+        res.status(503).json({
+          data: null,
+          error: {
+            message:
+              "SMS OTP delivery is currently disabled while regulatory approval is pending. Please use WhatsApp.",
+            code: "SMS_DISABLED",
+          },
+        });
+        return;
+      }
+      chosenChannel = "sms";
+    } else {
+      // Auto: prefer WhatsApp OTP if configured; fallback to SMS only if SMS is explicitly enabled
+      if (isTwilioWhatsAppOtpEnabled()) {
+        chosenChannel = "whatsapp";
+      } else if (smsAllowed && isTwilioSmsEnabled()) {
+        chosenChannel = "sms";
+      } else {
+        chosenChannel = "log_only";
+      }
+    }
+
+    // 4. Validate chosen channel configuration before generating OTP
+    if (chosenChannel === "whatsapp" && !isTwilioWhatsAppOtpEnabled()) {
+      res.status(503).json({
+        data: null,
+        error: {
+          message: "WhatsApp OTP is not configured on this server.",
+          code: "WHATSAPP_NOT_CONFIGURED",
+        },
+      });
+      return;
+    }
+
+    if (chosenChannel === "sms" && !isTwilioSmsEnabled()) {
+      if (isProduction) {
+        res.status(503).json({
+          data: null,
+          error: {
+            message: "SMS OTP is not configured on this server.",
+            code: "SMS_NOT_CONFIGURED",
+          },
+        });
+        return;
+      }
+      chosenChannel = "log_only";
+    }
+
+    if (chosenChannel === "log_only" && isProduction) {
+      res.status(503).json({
+        data: null,
+        error: {
+          message: "OTP delivery is not configured on this server. Contact your administrator.",
+          code: "OTP_NOT_CONFIGURED",
+        },
+      });
+      return;
+    }
+
+    // 5. Issue OTP code
+    const code = issueLoginOtp(body.phone, clientIp);
     const e164 = toE164(body.phone);
+    let delivery: "whatsapp" | "sms" | "log_only" = chosenChannel;
 
-    /** Real SMS vs console-only — never put the OTP in HTTP responses */
-    let delivery: "sms" | "log_only" = "log_only";
-
-    if (isTwilioSmsEnabled()) {
+    // 6. Deliver OTP — strict separation, NEVER fall back to SMS on WhatsApp error!
+    if (chosenChannel === "whatsapp") {
+      try {
+        await sendLoginOtpWhatsApp(e164, code);
+        delivery = "whatsapp";
+      } catch (err) {
+        clearOtpForPhone(body.phone);
+        if (!isProduction) {
+          console.error(
+            "[auth/otp] WhatsApp send failed:",
+            err instanceof Error ? err.message : err
+          );
+        }
+        res.status(503).json({
+          data: null,
+          error: {
+            message: "Failed to send verification code via WhatsApp. Please try again in a few moments.",
+            code: "WHATSAPP_DELIVERY_FAILED",
+          },
+        });
+        return;
+      }
+    } else if (chosenChannel === "sms") {
       try {
         const { sid, status } = await sendLoginOtpSms(e164, code);
         delivery = "sms";
         if (!isProduction) {
           console.info(
-            `[auth/otp] Twilio accepted SMS sid=${sid} status=${status} to=${e164} (check Twilio Console → Monitor → Message log if not delivered)`
+            `[auth/otp] Twilio accepted SMS sid=${sid} status=${status} to=${e164}`
           );
         }
       } catch (err) {
+        clearOtpForPhone(body.phone);
         if (!isProduction) {
-          console.error("[auth/otp] Twilio send failed:", err);
-          console.info(`[auth/otp] OTP for ${body.phone} (${e164}): ${code}`);
-        } else {
-          console.error("[auth/otp] Twilio send failed");
+          console.error("[auth/otp] Twilio SMS send failed:", err);
         }
         res.status(503).json({
           data: null,
@@ -254,24 +375,33 @@ export async function sendLoginOtp(req: Request, res: Response, next: NextFuncti
         });
         return;
       }
-    } else if (!isProduction) {
-      console.info(`[auth/otp] Twilio not configured — OTP for ${body.phone}: ${code}`);
+    } else {
+      delivery = "log_only";
     }
 
     const bypassDisabled = process.env.LOGIN_OTP_DEMO_CODE === "";
-    const demoBypassCode = bypassDisabled ? undefined : (process.env.LOGIN_OTP_DEMO_CODE ?? "1234");
-    const isDev = process.env.NODE_ENV !== "production";
+    const demoBypassCode =
+      bypassDisabled || isProduction
+        ? undefined
+        : (process.env.LOGIN_OTP_DEMO_CODE ?? "1234");
+    const isDev = !isProduction;
 
     res.json({
       data: {
         ok: true as const,
         delivery,
+        ...(delivery === "whatsapp" && {
+          hint: "OTP sent to your WhatsApp number.",
+        }),
+        ...(delivery === "sms" && {
+          hint: "OTP sent to your mobile number via SMS.",
+        }),
         ...(delivery === "log_only" && {
           hint: isDev
             ? demoBypassCode !== undefined
-              ? "SMS not configured — OTP is printed in the API terminal, or use the dev bypass code."
-              : "SMS not configured — OTP is printed only in the API terminal (demo bypass disabled via LOGIN_OTP_DEMO_CODE)."
-            : "SMS is not configured for this server. Contact your administrator.",
+              ? "Messaging not configured — use the dev bypass code."
+              : "Messaging not configured — demo bypass disabled."
+            : "OTP service is not configured for this server. Contact your administrator.",
           ...(isDev && demoBypassCode !== undefined ? { devDemoCode: demoBypassCode } : {}),
         }),
       },
@@ -295,12 +425,62 @@ export async function verifyLoginOtp(req: Request, res: Response, next: NextFunc
       res.status(401).json({ data: null, error: { message: "Invalid or expired OTP" } });
       return;
     }
-    const valid =
-      consumeLoginOtpIfValid(body.phone, entered) || isDemoLoginOtp(entered);
-    if (!valid) {
+
+    // Check demo bypass first (only active if not in production and configured)
+    const demoValid = isDemoLoginOtp(entered);
+    let otpValid = false;
+
+    if (demoValid) {
+      otpValid = true;
+      clearOtpForPhone(body.phone);
+    } else {
+      const verifyResult = verifyAndConsumeLoginOtp(body.phone, entered);
+      if (verifyResult.status === "VALID") {
+        otpValid = true;
+      } else if (verifyResult.status === "MAX_ATTEMPTS_EXCEEDED") {
+        res.status(401).json({
+          data: null,
+          error: {
+            message: "Too many incorrect attempts. This OTP has been invalidated. Please request a new code.",
+            code: "MAX_ATTEMPTS_EXCEEDED",
+          },
+        });
+        return;
+      } else if (verifyResult.status === "EXPIRED") {
+        res.status(401).json({
+          data: null,
+          error: {
+            message: "OTP has expired. Please request a new code.",
+            code: "OTP_EXPIRED",
+          },
+        });
+        return;
+      } else if (verifyResult.status === "INCORRECT") {
+        res.status(401).json({
+          data: null,
+          error: {
+            message: `Invalid OTP. ${verifyResult.remainingAttempts} attempt(s) remaining.`,
+            code: "INVALID_OTP",
+          },
+        });
+        return;
+      } else {
+        res.status(401).json({
+          data: null,
+          error: {
+            message: "Invalid or expired OTP",
+            code: "INVALID_OR_EXPIRED",
+          },
+        });
+        return;
+      }
+    }
+
+    if (!otpValid) {
       res.status(401).json({ data: null, error: { message: "Invalid or expired OTP" } });
       return;
     }
+
     await touchUserLastLogin(user.id);
     const branch = await prisma.branch.findUnique({ where: { id: user.branchId } });
     void logAuthActivity({

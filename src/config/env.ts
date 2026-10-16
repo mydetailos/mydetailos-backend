@@ -61,6 +61,12 @@ const schema = z.object({
   TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID: z.string().optional(),
   /** Marketing CTA with a fixed portal button URL and no variables. */
   TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID: z.string().optional(),
+  /** Approved WhatsApp Authentication template (Content SID: HX…) for Login OTP. */
+  TWILIO_OTP_TEMPLATE_SID: z.string().optional(),
+  /** Default delivery channel for login OTP ('whatsapp' | 'sms' | 'auto'). Defaults to 'auto'. */
+  OTP_DELIVERY_CHANNEL: z.enum(["whatsapp", "sms", "auto"]).default("auto"),
+  /** Set false to disable SMS OTP delivery while India DLT registration/approval is pending. Defaults to true. */
+  OTP_SMS_ENABLED: z.coerce.boolean().default(true),
   /** Default +91; set +1 etc. if your users are not in India */
   TWILIO_TO_NUMBER_PREFIX: z.string().optional(),
   /**
@@ -124,6 +130,9 @@ export const env = schema.parse({
   TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID),
   TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID),
   TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID: trimOpt(process.env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID),
+  TWILIO_OTP_TEMPLATE_SID: trimOpt(process.env.TWILIO_OTP_TEMPLATE_SID),
+  OTP_DELIVERY_CHANNEL: (trimOpt(process.env.OTP_DELIVERY_CHANNEL) as "whatsapp" | "sms" | "auto") ?? "auto",
+  OTP_SMS_ENABLED: process.env.OTP_SMS_ENABLED === undefined ? true : process.env.OTP_SMS_ENABLED !== "false",
   TWILIO_TO_NUMBER_PREFIX: trimOpt(process.env.TWILIO_TO_NUMBER_PREFIX),
   RESEND_API_KEY: trimOpt(process.env.RESEND_API_KEY),
   RESEND_WEBHOOK_SECRET: trimOpt(process.env.RESEND_WEBHOOK_SECRET),
