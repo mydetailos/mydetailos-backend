@@ -6,6 +6,7 @@
  * Creates: Organization + HQ Branch + SUPER_ADMIN owner + TRIAL subscription.
  */
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 import type { Branch, Organization, OrganizationSubscription, User } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { AppHttpError } from "../../lib/app-http-error.js";
@@ -64,7 +65,7 @@ export type ProvisionOrganizationResult = {
 };
 
 function shortId(): string {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  return `${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
 }
 
 function normalizePhone(phone: string): string {
@@ -140,10 +141,22 @@ export async function provisionOrganization(
   const now = new Date();
   const expiresAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
 
-  const orgId = `org-${shortId()}`;
-  const branchId = `br-${shortId()}`;
-  const userId = `usr-${shortId()}`;
-  const subId = `sub-${shortId()}`;
+  let orgId = `org-${shortId()}`;
+  while (await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } })) {
+    orgId = `org-${shortId()}`;
+  }
+  let branchId = `br-${shortId()}`;
+  while (await prisma.branch.findUnique({ where: { id: branchId }, select: { id: true } })) {
+    branchId = `br-${shortId()}`;
+  }
+  let userId = `usr-${shortId()}`;
+  while (await prisma.user.findUnique({ where: { id: userId }, select: { id: true } })) {
+    userId = `usr-${shortId()}`;
+  }
+  let subId = `sub-${shortId()}`;
+  while (await prisma.organizationSubscription.findUnique({ where: { id: subId }, select: { id: true } })) {
+    subId = `sub-${shortId()}`;
+  }
 
   let slug = ensureNonReservedSlug(businessName);
   const slugTaken = await prisma.organization.findUnique({
