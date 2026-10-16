@@ -147,12 +147,14 @@ export async function sendCustomerCredentialsWhatsApp(opts: {
   const templateVariables = customerCredentialsTemplateVariables({
     customerName: opts.customerName,
     businessName,
+    phone: opts.phone,
+    customerPortalUrl,
   });
 
   const contentSid =
     env.TWILIO_CUSTOMER_WELCOME_CONTENT_SID?.trim() ||
     env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID?.trim() ||
-    "HX2656ed64ee960fb6995f9211b4b71c72";
+    "HXa15928c2342c1604e358f8152a79dd45";
 
   try {
     const result = await sendWhatsAppMessage(opts.phone, {

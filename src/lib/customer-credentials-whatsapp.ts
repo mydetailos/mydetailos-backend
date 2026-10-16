@@ -20,15 +20,19 @@ export function buildCustomerCredentialsWhatsAppMessage(opts: {
   ].join("\n");
 }
 
-/** Variables for approved Twilio Content template `customer_portal_login_v2`. */
 export function customerCredentialsTemplateVariables(opts: {
   customerName: string;
   businessName: string;
+  phone?: string;
+  customerPortalUrl?: string;
 }): Record<string, string> {
   const customer = opts.customerName.trim() || "there";
   const business = opts.businessName.trim() || "My Detail OS";
-  return {
+  const vars: Record<string, string> = {
     "1": customer,
     "2": business,
   };
+  if (opts.phone) vars["3"] = opts.phone.trim();
+  if (opts.customerPortalUrl) vars["4"] = opts.customerPortalUrl.trim();
+  return vars;
 }
