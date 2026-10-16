@@ -34,7 +34,13 @@ async function resolveBusinessName(organizationId: string): Promise<string> {
   });
   const payload = row?.payload as Record<string, unknown> | undefined;
   const name = typeof payload?.businessName === "string" ? payload.businessName.trim() : "";
-  return name || "My Detail OS";
+  if (name) return name;
+
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { name: true },
+  });
+  return org?.name?.trim() || "My Detail OS";
 }
 
 async function logWhatsAppAttempt(opts: {
@@ -120,11 +126,16 @@ export async function sendCustomerCredentialsWhatsApp(opts: {
     businessName,
   });
 
+  const contentSid =
+    env.TWILIO_CUSTOMER_WELCOME_CONTENT_SID?.trim() ||
+    env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID?.trim() ||
+    "HX2656ed64ee960fb6995f9211b4b71c72";
+
   try {
-    await sendWhatsAppMessage(
-      opts.phone,
-      whatsappTemplateOrBody(env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID, templateVariables, message)
-    );
+    await sendWhatsAppMessage(opts.phone, {
+      contentSid,
+      contentVariables: templateVariables,
+    });
     await logWhatsAppAttempt({
       organizationId: opts.organizationId,
       customerId: opts.customerId,

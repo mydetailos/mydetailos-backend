@@ -120,13 +120,14 @@ export async function postCustomer(req: Request, res: Response, next: NextFuncti
     });
 
     let credentialsSent = false;
-    if (result.temporaryPassword) {
+    const passwordToSend = result.temporaryPassword || body.password;
+    if (passwordToSend) {
       const outcome = await sendCustomerCredentialsWhatsApp({
         organizationId: scope.organizationId,
         customerId: result.customer.id,
         customerName: result.customer.name,
         phone: result.customer.phone,
-        plainPassword: result.temporaryPassword,
+        plainPassword: passwordToSend,
       });
       credentialsSent = outcome.sent;
     }

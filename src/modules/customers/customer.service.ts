@@ -182,7 +182,7 @@ export async function createCustomer(data: {
 
   return {
     customer: toApiCustomer(row),
-    ...(useExplicitPassword ? {} : { temporaryPassword: plainPassword }),
+    temporaryPassword: plainPassword,
   };
 }
 
