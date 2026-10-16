@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 import type { Prisma, User as PrismaUser } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
@@ -110,7 +111,7 @@ export async function listStaffDirectoryApi(opts: {
 }
 
 export async function createUserApi(input: {
-  id: string;
+  id?: string;
   name: string;
   email: string;
   phone: string;
@@ -152,15 +153,52 @@ export async function createUserApi(input: {
     await assertCanCreateUser(branch.organizationId);
   }
 
+  const email = input.email.trim().toLowerCase();
+  const emailClash = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  });
+  if (emailClash) {
+    throw AppError.validation("A user with this email already exists.");
+  }
+
+  let finalUserId = input.id?.trim();
+  if (finalUserId) {
+    const idClash = await prisma.user.findUnique({
+      where: { id: finalUserId },
+      select: { id: true },
+    });
+    if (idClash) {
+      finalUserId = undefined;
+    }
+  }
+
+  if (!finalUserId) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = `usr-${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
+      const idClash = await prisma.user.findUnique({
+        where: { id: candidate },
+        select: { id: true },
+      });
+      if (!idClash) {
+        finalUserId = candidate;
+        break;
+      }
+    }
+    if (!finalUserId) {
+      finalUserId = `usr-${Date.now().toString(36)}${randomBytes(8).toString("hex")}`;
+    }
+  }
+
   const useExplicitPassword = input.password !== undefined && input.password.trim() !== "";
   const plainPassword = useExplicitPassword ? input.password!.trim() : generateTemporaryPassword();
   const passwordHash = await bcrypt.hash(plainPassword, 10);
   const now = new Date();
 
   const data: Prisma.UserUncheckedCreateInput = {
-    id: input.id,
+    id: finalUserId,
     name: input.name,
-    email: input.email.toLowerCase(),
+    email,
     phone: input.phone,
     role: input.role,
     branchId: input.branchId,
@@ -195,7 +233,34 @@ export async function createUserApi(input: {
     }
   }
 
-  const row = await prisma.user.create({ data });
+  let row: PrismaUser;
+  try {
+    row = await prisma.user.create({ data });
+  } catch (err: unknown) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      err.code === "P2002"
+    ) {
+      const meta = (err as { meta?: { target?: string[] | string } }).meta;
+      const target = meta?.target;
+      const msg = err instanceof Error ? err.message : String(err);
+      const isIdClash =
+        Array.isArray(target)
+          ? target.includes("id")
+          : target === "id" || msg.includes("(id)");
+      if (isIdClash) {
+        const fallbackId = `usr-${Date.now().toString(36)}${randomBytes(6).toString("hex")}`;
+        row = await prisma.user.create({ data: { ...data, id: fallbackId } });
+      } else {
+        throw err;
+      }
+    } else {
+      throw err;
+    }
+  }
+
   return {
     user: toApiUser(row),
     ...(!useExplicitPassword ? { temporaryPassword: plainPassword } : {}),

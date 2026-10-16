@@ -77,6 +77,33 @@ export async function findCustomerByPhoneAndOrg(
   return rows[0] ?? null;
 }
 
+export interface CustomerWithOrgRow extends CustomerAuthRow {
+  orgName: string;
+  orgSlug: string | null;
+}
+
+/**
+ * Finds all active customer records matching a 10-digit phone number across active organizations.
+ * Used for slugless customer portal login when a customer enters their phone number directly.
+ */
+export async function findActiveCustomersByPhone(
+  phone: string
+): Promise<CustomerWithOrgRow[]> {
+  const norm = normalizePhone(phone);
+  if (norm.length !== 10) return [];
+
+  const rows = await prisma.$queryRaw<CustomerWithOrgRow[]>`
+    SELECT c.id, c."organizationId", c.name, c.phone, c.email, c."passwordHash", c."isInactive",
+           o.name as "orgName", o.slug as "orgSlug"
+    FROM "Customer" c
+    JOIN "Organization" o ON c."organizationId" = o.id
+    WHERE c."isInactive" = false
+      AND o."isActive" = true
+      AND RIGHT(REGEXP_REPLACE(c.phone, '\\D', '', 'g'), 10) = ${norm}
+  `;
+  return rows;
+}
+
 export function markCustomerLoggedIn(customerId: string): void {
   prisma.customer
     .update({ where: { id: customerId }, data: { lastLoginAt: new Date() } })

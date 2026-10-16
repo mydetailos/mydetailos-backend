@@ -44,7 +44,7 @@ const roleEnum = z.enum([
 
 /** Plain shape — Zod v4 forbids `.partial()` on schemas that already use `.superRefine()`. */
 const createUserBodySchema = z.object({
-  id: z.string().min(1),
+  id: z.string().optional(),
   name: z.string().min(1),
   email: z.string().email(),
   phone: z.string().min(1),
