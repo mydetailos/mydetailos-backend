@@ -4,6 +4,9 @@ import {
   checkOtpSendRateLimits,
   issueLoginOtp,
   verifyAndConsumeLoginOtp,
+  issueSignupOtp,
+  verifyAndConsumeSignupOtp,
+  clearSignupOtpForPhone,
   isDemoLoginOtp,
   clearOtpForPhone,
   _resetOtpStateForTesting,
@@ -271,6 +274,86 @@ describe("WhatsApp Login OTP & Security Hardening", () => {
       } finally {
         (env as any).OTP_SMS_ENABLED = origSmsEnabled;
       }
+    });
+  });
+
+  describe("Signup OTP Verification & Security", () => {
+    it("issues a 6-digit numeric signup OTP", () => {
+      const phone = "9876543220";
+      const code = issueSignupOtp(phone, "127.0.0.1");
+
+      assert.equal(code.length, 6, "Must be 6 digits");
+      assert.match(code, /^\d{6}$/, "Must be all digits");
+      assert.ok(Number(code) >= 100000 && Number(code) <= 999999);
+    });
+
+    it("verifies and consumes signup OTP on valid entry", () => {
+      const phone = "9876543221";
+      const code = issueSignupOtp(phone, "127.0.0.1");
+
+      const result = verifyAndConsumeSignupOtp(phone, code);
+      assert.equal(result.status, "VALID", "Should be valid on correct code");
+
+      // Cannot reuse the consumed OTP
+      const secondAttempt = verifyAndConsumeSignupOtp(phone, code);
+      assert.equal(secondAttempt.status, "NOT_FOUND", "Consumed OTP cannot be reused");
+    });
+
+    it("invalidates signup OTP after 5 incorrect attempts", () => {
+      const phone = "9876543222";
+      issueSignupOtp(phone, "127.0.0.1");
+
+      for (let attempt = 1; attempt <= MAX_VERIFY_ATTEMPTS - 1; attempt++) {
+        const result = verifyAndConsumeSignupOtp(phone, "000000");
+        assert.equal(result.status, "INCORRECT");
+        if (result.status === "INCORRECT") {
+          assert.equal(result.remainingAttempts, MAX_VERIFY_ATTEMPTS - attempt);
+        }
+      }
+
+      // 5th attempt invalidates
+      const finalAttempt = verifyAndConsumeSignupOtp(phone, "000000");
+      assert.equal(finalAttempt.status, "MAX_ATTEMPTS_EXCEEDED");
+
+      // Subsequent attempt is not found because it was cleared
+      const after = verifyAndConsumeSignupOtp(phone, "000000");
+      assert.equal(after.status, "NOT_FOUND");
+    });
+
+    it("expires signup OTP after 10 minutes", () => {
+      const phone = "9876543223";
+      const code = issueSignupOtp(phone, "127.0.0.1");
+
+      const originalNow = Date.now;
+      try {
+        Date.now = () => originalNow() + OTP_TTL_MS + 1000;
+        const result = verifyAndConsumeSignupOtp(phone, code);
+        assert.equal(result.status, "EXPIRED");
+      } finally {
+        Date.now = originalNow;
+      }
+    });
+
+    it("shares resend cooldown across login and signup for the same phone number", () => {
+      const phone = "9876543224";
+      const ip = "127.0.0.1";
+
+      issueSignupOtp(phone, ip);
+
+      // Attempting to send login or signup OTP immediately is blocked by cooldown
+      const check = checkOtpSendRateLimits(phone, ip);
+      assert.equal(check.allowed, false);
+      assert.equal(check.reason, "COOLDOWN");
+    });
+
+    it("clears signup OTP when delivery fails", () => {
+      const phone = "9876543225";
+      const code = issueSignupOtp(phone, "127.0.0.1");
+
+      clearSignupOtpForPhone(phone);
+
+      const check = verifyAndConsumeSignupOtp(phone, code);
+      assert.equal(check.status, "NOT_FOUND");
     });
   });
 });
