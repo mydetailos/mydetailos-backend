@@ -6,10 +6,12 @@ import {
   getCustomerMe,
   postCustomerLogout,
   postCustomerSetPassword,
+  getCustomerLookup,
 } from "./customer-auth.controller.js";
 
 export const customerAuthRouter = Router();
 
+customerAuthRouter.get("/lookup", getCustomerLookup);
 customerAuthRouter.post("/otp/send", postCustomerSendOtp);
 customerAuthRouter.post("/otp/verify", postCustomerLogin);
 customerAuthRouter.post("/login", postCustomerLogin);

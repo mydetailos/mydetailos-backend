@@ -5,6 +5,7 @@ import {
   signCustomerAuthToken,
   setCustomerPassword,
   findCustomerByPhoneAndOrg,
+  findActiveCustomersByPhone,
   markCustomerLoggedIn,
 } from "./customer-auth.service.js";
 import { getCustomerById } from "./customer.service.js";
@@ -35,17 +36,12 @@ function getClientIp(req: Request): string {
   return req.ip || "unknown";
 }
 
-const customerOtpSendSchema = z
-  .object({
-    phone: z.string().regex(/^\d{10}$/, "Must be a 10-digit mobile number"),
-    organizationSlug: z.string().min(1).optional(),
-    organizationId: z.string().min(1).optional(),
-    channel: z.enum(["whatsapp", "sms"]).optional(),
-  })
-  .refine((v) => Boolean(v.organizationSlug?.trim() || v.organizationId?.trim()), {
-    message: "organizationSlug or organizationId is required",
-    path: ["organizationSlug"],
-  });
+const customerOtpSendSchema = z.object({
+  phone: z.string().regex(/^\d{10}$/, "Must be a 10-digit mobile number"),
+  organizationSlug: z.string().min(1).optional(),
+  organizationId: z.string().min(1).optional(),
+  channel: z.enum(["whatsapp", "sms"]).optional(),
+});
 
 const loginSchema = z
   .object({
@@ -60,10 +56,6 @@ const loginSchema = z
   .refine((v) => Boolean(v.password?.trim() || v.otp?.trim()), {
     message: "Password or OTP is required",
     path: ["password"],
-  })
-  .refine((v) => Boolean(v.organizationSlug?.trim() || v.organizationId?.trim()), {
-    message: "organizationSlug or organizationId is required",
-    path: ["organizationSlug"],
   });
 
 const setPasswordSchema = z.object({
@@ -79,6 +71,9 @@ export async function postCustomerSendOtp(req: Request, res: Response, next: Nex
     const clientIp = getClientIp(req);
 
     let organizationId = body.organizationId?.trim() || "";
+    let organizationSlug = body.organizationSlug?.trim() || "";
+    let organizationName = "";
+
     if (body.organizationSlug?.trim()) {
       const org = await getOrganizationBySlug(body.organizationSlug.trim());
       if (!org.isActive) {
@@ -86,13 +81,37 @@ export async function postCustomerSendOtp(req: Request, res: Response, next: Nex
         return;
       }
       organizationId = org.id;
+      organizationSlug = org.slug || "";
+      organizationName = org.name;
     }
+
     if (!organizationId) {
-      res.status(400).json({
-        data: null,
-        error: { message: "organizationSlug or organizationId is required" },
-      });
-      return;
+      const matches = await findActiveCustomersByPhone(body.phone);
+      if (matches.length === 0) {
+        res.status(404).json({
+          data: null,
+          error: { message: "No active customer account found for this mobile number." },
+        });
+        return;
+      }
+      if (matches.length === 1) {
+        organizationId = matches[0].organizationId;
+        organizationSlug = matches[0].orgSlug || "";
+        organizationName = matches[0].orgName;
+      } else {
+        res.status(200).json({
+          data: {
+            multipleWorkshops: true,
+            workshops: matches.map((m) => ({
+              id: m.organizationId,
+              name: m.orgName,
+              slug: m.orgSlug,
+            })),
+          },
+          error: null,
+        });
+        return;
+      }
     }
 
     // 1. Customer existence check in this tenant
@@ -245,6 +264,9 @@ export async function postCustomerSendOtp(req: Request, res: Response, next: Nex
       data: {
         ok: true as const,
         delivery,
+        organizationId,
+        organizationSlug,
+        organizationName,
         ...(delivery === "whatsapp" && {
           hint: "OTP sent to your WhatsApp number.",
         }),
@@ -269,6 +291,9 @@ export async function postCustomerLogin(req: Request, res: Response, next: NextF
   try {
     const body = loginSchema.parse(req.body);
     let organizationId = body.organizationId?.trim() || "";
+    let organizationSlug = body.organizationSlug?.trim() || "";
+    let organizationName = "";
+
     if (body.organizationSlug?.trim()) {
       const org = await getOrganizationBySlug(body.organizationSlug.trim());
       if (!org.isActive) {
@@ -276,16 +301,33 @@ export async function postCustomerLogin(req: Request, res: Response, next: NextF
         return;
       }
       organizationId = org.id;
-    }
-    if (!organizationId) {
-      res.status(400).json({
-        data: null,
-        error: { message: "organizationSlug or organizationId is required" },
-      });
-      return;
+      organizationSlug = org.slug || "";
+      organizationName = org.name;
     }
 
     const normPhone = body.phone.replace(/\D/g, "").slice(-10);
+
+    if (!organizationId) {
+      const matches = await findActiveCustomersByPhone(normPhone);
+      if (matches.length === 0) {
+        res.status(404).json({
+          data: null,
+          error: { message: "No active customer account found for this mobile number." },
+        });
+        return;
+      }
+      if (matches.length === 1) {
+        organizationId = matches[0].organizationId;
+        organizationSlug = matches[0].orgSlug || "";
+        organizationName = matches[0].orgName;
+      } else {
+        res.status(400).json({
+          data: null,
+          error: { message: "Please specify the workshop organization you are signing in to." },
+        });
+        return;
+      }
+    }
 
     // Flow 1: OTP Login
     if (body.otp?.trim()) {
@@ -349,7 +391,16 @@ export async function postCustomerLogin(req: Request, res: Response, next: NextF
       const accessToken = signCustomerAuthToken(customer);
       const user = await getCustomerById(customer.id, customer.organizationId);
 
-      res.json({ data: { accessToken, user }, error: null });
+      res.json({
+        data: {
+          accessToken,
+          user,
+          organizationId,
+          organizationSlug,
+          organizationName,
+        },
+        error: null,
+      });
       return;
     }
 
@@ -367,7 +418,16 @@ export async function postCustomerLogin(req: Request, res: Response, next: NextF
     const accessToken = signCustomerAuthToken(customer);
     const user = await getCustomerById(customer.id, customer.organizationId);
 
-    res.json({ data: { accessToken, user }, error: null });
+    res.json({
+      data: {
+        accessToken,
+        user,
+        organizationId,
+        organizationSlug,
+        organizationName,
+      },
+      error: null,
+    });
   } catch (e) {
     next(e);
   }
@@ -424,6 +484,44 @@ export async function postCustomerSetPassword(req: Request, res: Response, next:
     }
     const user = await getCustomerById(updated.id, updated.organizationId);
     res.json({ data: { user }, error: null });
+  } catch (e) {
+    next(e);
+  }
+}
+
+/**
+ * GET /api/auth/customer/lookup?phone=XXXXXXXXXX
+ * Resolves workshop organizations associated with a customer mobile number.
+ */
+export async function getCustomerLookup(req: Request, res: Response, next: NextFunction) {
+  try {
+    const phone = String(req.query.phone || "").trim();
+    const norm = phone.replace(/\D/g, "").slice(-10);
+    if (norm.length !== 10) {
+      res.status(400).json({
+        data: null,
+        error: { message: "A valid 10-digit mobile number is required" },
+      });
+      return;
+    }
+    const matches = await findActiveCustomersByPhone(norm);
+    if (matches.length === 0) {
+      res.status(404).json({
+        data: null,
+        error: { message: "No active customer account found for this mobile number." },
+      });
+      return;
+    }
+    res.json({
+      data: {
+        workshops: matches.map((m) => ({
+          id: m.organizationId,
+          name: m.orgName,
+          slug: m.orgSlug,
+        })),
+      },
+      error: null,
+    });
   } catch (e) {
     next(e);
   }

@@ -75,15 +75,38 @@ export interface SendCustomerCredentialsResult {
   reason?: string;
 }
 
-/** `env.FRONTEND_ORIGIN` is a comma-separated CORS allow-list; use the first entry for links. */
-function primaryFrontendOrigin(): string {
-  const first = env.FRONTEND_ORIGIN.split(",")[0]?.trim() || "http://localhost:3000";
-  return first.replace(/\/$/, "");
+/**
+ * Resolves the workshop frontend origin for customer portal links.
+ * Always prefers `app.mydetailos.com` (or port 3002 locally) over `www.mydetailos.com`.
+ */
+function resolveCustomerPortalOrigin(): string {
+  if (process.env.WORKSHOP_APP_ORIGIN?.trim()) {
+    return process.env.WORKSHOP_APP_ORIGIN.trim().replace(/\/$/, "");
+  }
+  const origins = (env.FRONTEND_ORIGIN || "")
+    .split(",")
+    .map((o) => o.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+
+  // 1. Prefer explicit workshop app origin (app.mydetailos.com or port 3002)
+  const workshopOrigin = origins.find(
+    (o) => o.includes("app.mydetailos.com") || o.includes(":3002")
+  );
+  if (workshopOrigin) return workshopOrigin;
+
+  // 2. Next, prefer any origin that is NOT the marketing website (www.mydetailos.com / port 3003)
+  const nonMarketing = origins.find(
+    (o) => !o.includes("www.mydetailos.com") && !o.includes("website") && !o.includes(":3003")
+  );
+  if (nonMarketing) return nonMarketing;
+
+  // 3. Safe fallback: app.mydetailos.com in production, or first origin
+  return process.env.NODE_ENV === "production" ? "https://app.mydetailos.com" : origins[0] || "http://localhost:3002";
 }
 
 /** Tenant-aware customer portal login URL: /{orgSlug}/customer/login */
 async function resolveCustomerPortalLoginUrl(organizationId: string): Promise<string> {
-  const origin = primaryFrontendOrigin();
+  const origin = resolveCustomerPortalOrigin();
   const org = await ensureOrganizationHasSlug(organizationId);
   const slug = org?.slug?.trim().toLowerCase();
   if (slug) return `${origin}/${slug}/customer/login`;
