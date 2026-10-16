@@ -24,6 +24,7 @@
     "test:staff-access": "tsx scripts/check-staff-access.ts",
     "test:job-card-pricing": "tsx scripts/check-job-card-pricing-guard.ts",
     "grant:job-card-pricing": "tsx scripts/grant-job-card-pricing.ts",
+    "test:whatsapp-otp": "tsx --test scripts/whatsapp-login-otp.test.ts",
     "test:plan-catalog": "tsx --test scripts/plan-catalog.test.ts",
     "test:subscription-lock": "tsx --test scripts/subscription-lock.test.ts",
     "test:data-scope": "tsx --test scripts/data-scope.test.ts",
