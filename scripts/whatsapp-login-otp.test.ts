@@ -7,6 +7,9 @@ import {
   issueSignupOtp,
   verifyAndConsumeSignupOtp,
   clearSignupOtpForPhone,
+  issueCustomerOtp,
+  verifyAndConsumeCustomerOtp,
+  clearCustomerOtpForPhone,
   isDemoLoginOtp,
   clearOtpForPhone,
   _resetOtpStateForTesting,
@@ -353,6 +356,67 @@ describe("WhatsApp Login OTP & Security Hardening", () => {
       clearSignupOtpForPhone(phone);
 
       const check = verifyAndConsumeSignupOtp(phone, code);
+      assert.equal(check.status, "NOT_FOUND");
+    });
+  });
+
+  describe("Customer Portal OTP Verification & Security", () => {
+    const orgId = "org-test-123";
+
+    it("issues a 6-digit numeric customer OTP", () => {
+      const phone = "9876543230";
+      const code = issueCustomerOtp(phone, orgId, "127.0.0.1");
+
+      assert.equal(code.length, 6);
+      assert.match(code, /^\d{6}$/);
+      assert.ok(Number(code) >= 100000 && Number(code) <= 999999);
+    });
+
+    it("verifies and consumes customer OTP on valid entry", () => {
+      const phone = "9876543231";
+      const code = issueCustomerOtp(phone, orgId, "127.0.0.1");
+
+      const result = verifyAndConsumeCustomerOtp(phone, orgId, code);
+      assert.equal(result.status, "VALID");
+
+      // Consumed OTP cannot be reused
+      const secondAttempt = verifyAndConsumeCustomerOtp(phone, orgId, code);
+      assert.equal(secondAttempt.status, "NOT_FOUND");
+    });
+
+    it("isolates customer OTP across organizations", () => {
+      const phone = "9876543232";
+      const code = issueCustomerOtp(phone, "org-one", "127.0.0.1");
+
+      // Wrong org cannot verify
+      const wrongOrg = verifyAndConsumeCustomerOtp(phone, "org-two", code);
+      assert.equal(wrongOrg.status, "NOT_FOUND");
+
+      // Right org verifies successfully
+      const rightOrg = verifyAndConsumeCustomerOtp(phone, "org-one", code);
+      assert.equal(rightOrg.status, "VALID");
+    });
+
+    it("invalidates customer OTP after 5 incorrect attempts", () => {
+      const phone = "9876543233";
+      issueCustomerOtp(phone, orgId, "127.0.0.1");
+
+      for (let attempt = 1; attempt <= MAX_VERIFY_ATTEMPTS - 1; attempt++) {
+        const result = verifyAndConsumeCustomerOtp(phone, orgId, "000000");
+        assert.equal(result.status, "INCORRECT");
+      }
+
+      const finalAttempt = verifyAndConsumeCustomerOtp(phone, orgId, "000000");
+      assert.equal(finalAttempt.status, "MAX_ATTEMPTS_EXCEEDED");
+    });
+
+    it("clears customer OTP when delivery fails", () => {
+      const phone = "9876543234";
+      const code = issueCustomerOtp(phone, orgId, "127.0.0.1");
+
+      clearCustomerOtpForPhone(phone, orgId);
+
+      const check = verifyAndConsumeCustomerOtp(phone, orgId, code);
       assert.equal(check.status, "NOT_FOUND");
     });
   });

@@ -25,6 +25,11 @@ export type OtpEntry = {
 
 const otpByPhone = new Map<string, OtpEntry>();
 const signupOtpByPhone = new Map<string, OtpEntry>();
+const customerOtpByKey = new Map<string, OtpEntry>();
+
+function customerOtpKey(phoneTen: string, organizationId: string): string {
+  return `${organizationId.trim()}:${phoneTen.trim()}`;
+}
 
 // Rate limiting states
 type RateLimitState = { count: number; resetAt: number };
@@ -51,18 +56,26 @@ export type RateLimitCheckResult =
 export function checkOtpSendRateLimits(phoneTen: string, ip?: string): RateLimitCheckResult {
   const now = Date.now();
 
-  // 1. Cooldown check (per phone number across login and signup)
+  // 1. Cooldown check (per phone number across login, signup, and customer portal)
   const existingLogin = otpByPhone.get(phoneTen);
   const existingSignup = signupOtpByPhone.get(phoneTen);
-  const existing =
+  let mostRecent =
     existingLogin && existingSignup
       ? existingLogin.lastIssuedAt > existingSignup.lastIssuedAt
         ? existingLogin
         : existingSignup
       : existingLogin ?? existingSignup;
 
-  if (existing && existing.expiresAt > now) {
-    const elapsed = now - existing.lastIssuedAt;
+  for (const [key, entry] of customerOtpByKey.entries()) {
+    if (key.endsWith(`:${phoneTen}`)) {
+      if (!mostRecent || entry.lastIssuedAt > mostRecent.lastIssuedAt) {
+        mostRecent = entry;
+      }
+    }
+  }
+
+  if (mostRecent && mostRecent.expiresAt > now) {
+    const elapsed = now - mostRecent.lastIssuedAt;
     if (elapsed < OTP_RESEND_COOLDOWN_MS) {
       const waitSec = Math.ceil((OTP_RESEND_COOLDOWN_MS - elapsed) / 1000);
       return {
@@ -253,10 +266,63 @@ export function isDemoLoginOtp(entered: string): boolean {
   );
 }
 
+/** Issues a 6-digit numeric customer portal login OTP and records rate limit counters. */
+export function issueCustomerOtp(phoneTen: string, organizationId: string, ip?: string): string {
+  const now = Date.now();
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const key = customerOtpKey(phoneTen, organizationId);
+  customerOtpByKey.set(key, {
+    code,
+    expiresAt: now + OTP_TTL_MS,
+    lastIssuedAt: now,
+    failedAttempts: 0,
+  });
+
+  recordSendLimits(phoneTen, ip);
+  return code;
+}
+
+/** Remove a customer OTP for a phone number (e.g. if delivery fails). */
+export function clearCustomerOtpForPhone(phoneTen: string, organizationId: string): void {
+  customerOtpByKey.delete(customerOtpKey(phoneTen, organizationId));
+}
+
+/** Verifies an entered customer login OTP with failed attempt tracking. */
+export function verifyAndConsumeCustomerOtp(
+  phoneTen: string,
+  organizationId: string,
+  entered: string
+): VerifyOtpResult {
+  const now = Date.now();
+  const key = customerOtpKey(phoneTen, organizationId);
+  const entry = customerOtpByKey.get(key);
+  if (!entry) {
+    return { status: "NOT_FOUND" };
+  }
+  if (entry.expiresAt < now) {
+    customerOtpByKey.delete(key);
+    return { status: "EXPIRED" };
+  }
+  if (entry.code !== entered) {
+    entry.failedAttempts += 1;
+    const remaining = MAX_VERIFY_ATTEMPTS - entry.failedAttempts;
+    if (remaining <= 0) {
+      customerOtpByKey.delete(key);
+      return { status: "MAX_ATTEMPTS_EXCEEDED" };
+    }
+    return { status: "INCORRECT", remainingAttempts: remaining };
+  }
+
+  // Correct code — consume immediately
+  customerOtpByKey.delete(key);
+  return { status: "VALID" };
+}
+
 /** Reset in-memory state for clean unit tests. */
 export function _resetOtpStateForTesting(): void {
   otpByPhone.clear();
   signupOtpByPhone.clear();
+  customerOtpByKey.clear();
   phoneSendLimiter.clear();
   ipSendLimiter.clear();
 }
