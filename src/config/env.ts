@@ -53,6 +53,9 @@ const schema = z.object({
   /** Approved Twilio Content SID with a document media header for inspection reports. */
   TWILIO_INSPECTION_REPORT_CONTENT_SID: z.string().optional(),
   TWILIO_INSPECTION_TEMPLATE_SID: z.string().optional(),
+  /** Approved Utility template for Job Card Created / Check-in. */
+  TWILIO_JOB_CARD_CREATED_CONTENT_SID: z.string().optional(),
+  TWILIO_JOB_CARD_CREATED_TEMPLATE_SID: z.string().optional(),
   /** Approved Utility templates (HX…). When unset, WhatsApp falls back to free-form session messages. */
   TWILIO_SERVICE_REMINDER_CONTENT_SID: z.string().optional(),
   TWILIO_SERVICE_REMINDER_TEMPLATE_SID: z.string().optional(),
@@ -132,6 +135,12 @@ export const env = schema.parse({
   ),
   TWILIO_INSPECTION_TEMPLATE_SID: trimOpt(
     process.env.TWILIO_INSPECTION_REPORT_CONTENT_SID ?? process.env.TWILIO_INSPECTION_TEMPLATE_SID
+  ),
+  TWILIO_JOB_CARD_CREATED_CONTENT_SID: trimOpt(
+    process.env.TWILIO_JOB_CARD_CREATED_CONTENT_SID ?? process.env.TWILIO_JOB_CARD_CREATED_TEMPLATE_SID
+  ),
+  TWILIO_JOB_CARD_CREATED_TEMPLATE_SID: trimOpt(
+    process.env.TWILIO_JOB_CARD_CREATED_CONTENT_SID ?? process.env.TWILIO_JOB_CARD_CREATED_TEMPLATE_SID
   ),
   TWILIO_SERVICE_REMINDER_CONTENT_SID: trimOpt(
     process.env.TWILIO_SERVICE_REMINDER_CONTENT_SID ?? process.env.TWILIO_SERVICE_REMINDER_TEMPLATE_SID

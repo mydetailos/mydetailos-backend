@@ -38,15 +38,18 @@ async function requireOrg(req: Request) {
   return resolveBranchScope(req.auth);
 }
 
-const segmentEnum = z.enum([
-  "HATCHBACK",
-  "SEDAN",
-  "SUV",
-  "LUXURY",
-  "MUV",
-  "COMPACT_SUV",
-  "BIKE",
-]);
+const segmentEnum = z.preprocess(
+  (val) => (val === "MUV_MPV" ? "MUV" : val),
+  z.enum([
+    "HATCHBACK",
+    "SEDAN",
+    "SUV",
+    "LUXURY",
+    "MUV",
+    "COMPACT_SUV",
+    "BIKE",
+  ])
+);
 
 const fuelEnum = z.enum(["PETROL", "DIESEL", "CNG", "ELECTRIC", "HYBRID"]);
 
@@ -60,15 +63,15 @@ const vehicleSchema = z.object({
   segment: segmentEnum,
   variant: z.string().nullable().optional(),
   fuelType: fuelEnum,
-  color: z.string().min(1),
-  year: z.number().int(),
+  color: z.string().optional().default("—"),
+  year: z.coerce.number().int(),
   notes: z.string().nullable().optional(),
-  odometer: z.number().int().nullable().optional(),
+  odometer: z.coerce.number().int().nullable().optional(),
   insuranceProvider: z.string().nullable().optional(),
   insurancePolicyNumber: z.string().nullable().optional(),
   insuranceDueDate: z.string().nullable().optional(),
   vinNumber: z.string().nullable().optional(),
-  previousOwners: z.array(z.unknown()).nullable().optional(),
+  previousOwners: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).nullable().optional(),
 });
 
 const patchVehicleSchema = vehicleSchema.partial().omit({ id: true });
@@ -198,12 +201,13 @@ export async function putVehicle(req: Request, res: Response, next: NextFunction
     const id = paramId(req);
     const body = patchVehicleSchema.parse(req.body);
     if (body.registrationNumber !== undefined) {
+      const regClean = body.registrationNumber.trim().toUpperCase().replace(/\s/g, "");
+      body.registrationNumber = regClean;
       const existing = await prisma.vehicle.findFirst({ where: { id, organizationId: scope.organizationId } });
       if (existing) {
         const vinNumber = body.vinNumber !== undefined ? body.vinNumber : existing.vinNumber;
-        const regNumber = body.registrationNumber;
-        const isVin = vinNumber && regNumber === vinNumber;
-        if (!isVin && !isValidIndianVehicleRegistration(regNumber)) {
+        const isVin = vinNumber && regClean === vinNumber;
+        if (!isVin && !isValidIndianVehicleRegistration(regClean)) {
           res.status(400).json({ data: null, error: { message: "Invalid registration number format" } });
           return;
         }
@@ -218,6 +222,14 @@ export async function putVehicle(req: Request, res: Response, next: NextFunction
     if (!vehicle) {
       res.status(404).json({ data: null, error: { message: "Vehicle not found" } });
       return;
+    }
+    if (body.registrationNumber) {
+      await prisma.appointment.updateMany({
+        where: { vehicleId: id, organizationId: scope.organizationId },
+        data: { vehicleRegNumber: body.registrationNumber },
+      }).catch((err: unknown) => {
+        console.warn("[vehicles/putVehicle] Failed to sync appointments vehicleRegNumber:", err);
+      });
     }
     res.json({ data: { vehicle }, error: null });
   } catch (e) {

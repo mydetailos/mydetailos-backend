@@ -160,31 +160,27 @@ export async function updateVehicleApi(
     updatedByUserId: string;
   }>
 ): Promise<ReturnType<typeof toApiVehicle> | null> {
-  try {
-    const owned = await prisma.vehicle.findFirst({ where: { id, organizationId } });
-    if (!owned) return null;
-    const data: Record<string, unknown> = { ...patch };
-    if (patch.previousOwners !== undefined) {
-      data.previousOwners = patch.previousOwners ? (patch.previousOwners as object) : null;
-    }
-    const row = await prisma.vehicle.update({
-      where: { id },
-      data: data as Parameters<typeof prisma.vehicle.update>[0]["data"],
-    });
-
-    if (patch.updatedByUserId) {
-      const { logBusinessActivity } = await import("../../services/activity-logger.service.js");
-      await logBusinessActivity({ organizationId, hasJobCardPricingPermission: false, userId: patch.updatedByUserId }, {
-        action: "UPDATE_VEHICLE",
-        entityType: "VEHICLE",
-        entityId: id,
-      });
-    }
-
-    return toApiVehicle(row);
-  } catch {
-    return null;
+  const owned = await prisma.vehicle.findFirst({ where: { id, organizationId } });
+  if (!owned) return null;
+  const data: Record<string, unknown> = { ...patch };
+  if (patch.previousOwners !== undefined) {
+    data.previousOwners = patch.previousOwners ? (patch.previousOwners as object) : null;
   }
+  const row = await prisma.vehicle.update({
+    where: { id },
+    data: data as Parameters<typeof prisma.vehicle.update>[0]["data"],
+  });
+
+  if (patch.updatedByUserId) {
+    const { logBusinessActivity } = await import("../../services/activity-logger.service.js");
+    await logBusinessActivity({ organizationId, hasJobCardPricingPermission: false, userId: patch.updatedByUserId }, {
+      action: "UPDATE_VEHICLE",
+      entityType: "VEHICLE",
+      entityId: id,
+    });
+  }
+
+  return toApiVehicle(row);
 }
 
 export async function deleteVehicleApi(id: string, organizationId: string, userId?: string): Promise<boolean> {
