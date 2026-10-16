@@ -54,11 +54,33 @@ export async function authenticateCustomer(
   if (!ok) return null;
 
   // Fire-and-forget: lastLoginAt is informational; don't block the auth response on it.
-  prisma.customer
-    .update({ where: { id: customer.id }, data: { lastLoginAt: new Date() } })
-    .catch(() => {});
+  markCustomerLoggedIn(customer.id);
 
   return customer;
+}
+
+export async function findCustomerByPhoneAndOrg(
+  phone: string,
+  organizationId: string
+): Promise<CustomerAuthRow | null> {
+  const norm = normalizePhone(phone);
+  const orgId = organizationId.trim();
+  if (norm.length !== 10 || !orgId) return null;
+
+  const rows = await prisma.$queryRaw<CustomerAuthRow[]>`
+    SELECT id, "organizationId", name, phone, email, "passwordHash", "isInactive"
+    FROM "Customer"
+    WHERE "organizationId" = ${orgId}
+      AND RIGHT(REGEXP_REPLACE(phone, '\\D', '', 'g'), 10) = ${norm}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+export function markCustomerLoggedIn(customerId: string): void {
+  prisma.customer
+    .update({ where: { id: customerId }, data: { lastLoginAt: new Date() } })
+    .catch(() => {});
 }
 
 export function signCustomerAuthToken(customer: {
