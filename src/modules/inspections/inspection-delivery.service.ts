@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { env } from "../../config/env.js";
 import { AppError } from "../../lib/app-error.js";
-import { isExportLocked } from "../../lib/subscription-lock.js";
+import { isOrganizationExpiredOrInactive } from "../../lib/subscription-lock.js";
 import type { BranchScope } from "../../lib/data-scope.js";
 import { prisma } from "../../lib/prisma.js";
 import { readPrivateInspectionAsset } from "../../services/object-storage.service.js";
@@ -136,18 +136,38 @@ export async function sendInspectionReport(input: {
   });
   if (!report) throw AppError.conflict("Only an accessible finalized revision can be sent.");
 
-  const [version, subscription] = await Promise.all([
+  const [version, org] = await Promise.all([
     prisma.inspectionReportVersion.findUnique({
       where: { reportId_revision: { reportId: report.id, revision: input.revision } },
     }),
-    prisma.organizationSubscription.findUnique({
-      where: { organizationId: input.scope.organizationId },
-      select: { expiresAt: true, currentPeriodEnd: true },
+    prisma.organization.findUnique({
+      where: { id: input.scope.organizationId },
+      select: {
+        isActive: true,
+        subscription: {
+          select: { status: true, expiresAt: true, currentPeriodEnd: true },
+        },
+      },
     }),
   ]);
   if (!version?.documentKey) throw AppError.conflict("The finalized inspection PDF is unavailable.");
-  if (isExportLocked(subscription?.expiresAt ?? subscription?.currentPeriodEnd)) {
-    throw AppError.forbidden("Inspection PDF sending is locked by the organization subscription.");
+
+  if (!org || !org.isActive) {
+    throw AppError.forbidden("Inspection PDF sending is blocked because the organization is inactive.");
+  }
+
+  const sub = org.subscription;
+  if (sub) {
+    const expiresAt = sub.expiresAt ?? sub.currentPeriodEnd;
+    if (
+      isOrganizationExpiredOrInactive({
+        orgIsActive: org.isActive,
+        subscriptionStatus: sub.status,
+        expiresAt,
+      })
+    ) {
+      throw AppError.forbidden("Inspection PDF sending is blocked because the organization subscription has expired.");
+    }
   }
 
   let log;

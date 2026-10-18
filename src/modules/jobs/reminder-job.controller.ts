@@ -154,3 +154,25 @@ export async function postProcessRemindersJob(req: Request, res: Response, next:
     next(e);
   }
 }
+
+/**
+ * POST /api/jobs/subscription-reminders/process
+ * Daily processor for trial & subscription expiration alerts & reminders.
+ */
+export async function postProcessSubscriptionRemindersJob(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { processSubscriptionExpiryReminders } = await import(
+      "../organization/subscription-expiry-job.service.js"
+    );
+    const summary = await processSubscriptionExpiryReminders();
+    res.json({
+      data: {
+        ok: true as const,
+        summary,
+      },
+      error: null,
+    });
+  } catch (e) {
+    next(e);
+  }
+}

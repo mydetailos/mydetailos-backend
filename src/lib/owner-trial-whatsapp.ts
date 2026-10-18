@@ -190,3 +190,155 @@ export function buildOwnerPaymentLinkWhatsAppMessage(opts: {
     `Team MY DETAIL OS`,
   ].join("\n");
 }
+
+/** Variables for Twilio template `trial_expired_v1` (HX0d17b4d75645d165b231a0d86b32e876). */
+export function ownerTrialExpiredTemplateVariables(opts: {
+  ownerName: string;
+  organizationName: string;
+  expirationDate: string;
+  upgradeUrl: string;
+}): Record<string, string> {
+  return {
+    "1": firstNameFrom(opts.ownerName),
+    "2": opts.organizationName,
+    "3": opts.expirationDate,
+    "4": opts.upgradeUrl.replace(/\/$/, ""),
+  };
+}
+
+/** Variables for Twilio template `subscription_expired_v1` (HX54f7800d178682b39fdbfe1e3f329497). */
+export function ownerSubscriptionExpiredTemplateVariables(opts: {
+  ownerName: string;
+  organizationName: string;
+  planName: string;
+  expirationDate: string;
+  renewalUrl: string;
+}): Record<string, string> {
+  return {
+    "1": firstNameFrom(opts.ownerName),
+    "2": opts.organizationName,
+    "3": opts.planName,
+    "4": opts.expirationDate,
+    "5": opts.renewalUrl.replace(/\/$/, ""),
+  };
+}
+
+export function buildOwnerTrialExpiredWhatsAppMessage(opts: {
+  ownerName: string;
+  organizationName: string;
+  expirationDate: string;
+  upgradeUrl: string;
+}): string {
+  const first = firstNameFrom(opts.ownerName);
+  return [
+    `Hi ${first}! ⚠️`,
+    `Your free trial for ${opts.organizationName} on My Detail OS has expired.`,
+    ``,
+    `📅 Expiration Date: ${opts.expirationDate}`,
+    `🔗 Upgrade to an active plan to keep your operations running:`,
+    opts.upgradeUrl,
+    ``,
+    `Thank you,`,
+    `Team My Detail OS.`,
+  ].join("\n");
+}
+
+export function buildOwnerSubscriptionExpiredWhatsAppMessage(opts: {
+  ownerName: string;
+  organizationName: string;
+  planName: string;
+  expirationDate: string;
+  renewalUrl: string;
+}): string {
+  const first = firstNameFrom(opts.ownerName);
+  return [
+    `Hi ${first}! ⚠️`,
+    `Your ${opts.planName} subscription for ${opts.organizationName} on My Detail OS has expired.`,
+    ``,
+    `📅 Expiration Date: ${opts.expirationDate}`,
+    `🔗 Renew your subscription to restore full access:`,
+    opts.renewalUrl,
+    ``,
+    `Thank you,`,
+    `Team My Detail OS.`,
+  ].join("\n");
+}
+
+/** Variables for Twilio template `trial_expiring_reminder_v1` (HX45af808870cab6c07b1fbee3f5b4f80a). */
+export function ownerTrialExpiringReminderTemplateVariables(opts: {
+  ownerName: string;
+  organizationName: string;
+  timeRemaining: string;
+  expirationDate: string;
+  upgradeUrl: string;
+}): Record<string, string> {
+  return {
+    "1": firstNameFrom(opts.ownerName),
+    "2": opts.organizationName,
+    "3": opts.timeRemaining,
+    "4": opts.expirationDate,
+    "5": opts.upgradeUrl.replace(/\/$/, ""),
+  };
+}
+
+/** Variables for Twilio template `sub_expiring_reminder_v1` (HX25e04dd54564f85f7a27b1269952d8db). */
+export function ownerSubscriptionExpiringReminderTemplateVariables(opts: {
+  ownerName: string;
+  organizationName: string;
+  planName: string;
+  timeRemaining: string;
+  expirationDate: string;
+  renewalUrl: string;
+}): Record<string, string> {
+  return {
+    "1": firstNameFrom(opts.ownerName),
+    "2": opts.organizationName,
+    "3": opts.planName,
+    "4": opts.timeRemaining,
+    "5": opts.expirationDate,
+    "6": opts.renewalUrl.replace(/\/$/, ""),
+  };
+}
+
+export function buildOwnerTrialExpiringReminderWhatsAppMessage(opts: {
+  ownerName: string;
+  organizationName: string;
+  timeRemaining: string;
+  expirationDate: string;
+  upgradeUrl: string;
+}): string {
+  const first = firstNameFrom(opts.ownerName);
+  return [
+    `Hi ${first}! ⏳`,
+    `Friendly reminder: your free trial for ${opts.organizationName} on My Detail OS is expiring in ${opts.timeRemaining}.`,
+    ``,
+    `📅 Expiration Date: ${opts.expirationDate}`,
+    `🔗 Upgrade your plan to maintain uninterrupted garage operations:`,
+    opts.upgradeUrl,
+    ``,
+    `Thank you,`,
+    `Team My Detail OS.`,
+  ].join("\n");
+}
+
+export function buildOwnerSubscriptionExpiringReminderWhatsAppMessage(opts: {
+  ownerName: string;
+  organizationName: string;
+  planName: string;
+  timeRemaining: string;
+  expirationDate: string;
+  renewalUrl: string;
+}): string {
+  const first = firstNameFrom(opts.ownerName);
+  return [
+    `Hi ${first}! ⏳`,
+    `Friendly reminder: your ${opts.planName} subscription for ${opts.organizationName} on My Detail OS is expiring in ${opts.timeRemaining}.`,
+    ``,
+    `📅 Expiration Date: ${opts.expirationDate}`,
+    `🔗 Renew your subscription to maintain uninterrupted service:`,
+    opts.renewalUrl,
+    ``,
+    `Thank you,`,
+    `Team My Detail OS.`,
+  ].join("\n");
+}

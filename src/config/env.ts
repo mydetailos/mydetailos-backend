@@ -56,6 +56,12 @@ const schema = z.object({
   /** Approved Utility template for Job Card Created / Check-in. */
   TWILIO_JOB_CARD_CREATED_CONTENT_SID: z.string().optional(),
   TWILIO_JOB_CARD_CREATED_TEMPLATE_SID: z.string().optional(),
+  TWILIO_JOB_CARD_READY_CONTENT_SID: z.string().optional(),
+  TWILIO_INVOICE_CREATED_CONTENT_SID: z.string().optional(),
+  TWILIO_PAYMENT_RECEIVED_CONTENT_SID: z.string().optional(),
+  TWILIO_JOB_DELIVERED_CONTENT_SID: z.string().optional(),
+  TWILIO_BOOKING_CONFIRMED_CONTENT_SID: z.string().optional(),
+  TWILIO_MEMBERSHIP_WELCOME_CONTENT_SID: z.string().optional(),
   /** Approved Utility templates (HX…). When unset, WhatsApp falls back to free-form session messages. */
   TWILIO_SERVICE_REMINDER_CONTENT_SID: z.string().optional(),
   TWILIO_SERVICE_REMINDER_TEMPLATE_SID: z.string().optional(),
@@ -65,6 +71,10 @@ const schema = z.object({
   TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID: z.string().optional(),
   /** Approved CTA template owner_trial_started_login ({{1}}=name, {{2}}=days, button=Login). */
   TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID: z.string().optional(),
+  TWILIO_OWNER_TRIAL_EXPIRED_TEMPLATE_SID: z.string().optional(),
+  TWILIO_OWNER_TRIAL_EXPIRING_REMINDER_TEMPLATE_SID: z.string().optional(),
+  TWILIO_OWNER_SUBSCRIPTION_EXPIRED_TEMPLATE_SID: z.string().optional(),
+  TWILIO_OWNER_SUBSCRIPTION_EXPIRING_REMINDER_TEMPLATE_SID: z.string().optional(),
   /** Approved WhatsApp Content template (HX…) for Customer Welcome message on account creation. */
   TWILIO_CUSTOMER_WELCOME_CONTENT_SID: z.string().optional(),
   /** Marketing CTA with a fixed portal button URL and no variables. */
@@ -146,6 +156,8 @@ export const env = schema.parse({
   TWILIO_INVOICE_CREATED_CONTENT_SID: trimOpt(process.env.TWILIO_INVOICE_CREATED_CONTENT_SID),
   TWILIO_PAYMENT_RECEIVED_CONTENT_SID: trimOpt(process.env.TWILIO_PAYMENT_RECEIVED_CONTENT_SID),
   TWILIO_JOB_DELIVERED_CONTENT_SID: trimOpt(process.env.TWILIO_JOB_DELIVERED_CONTENT_SID),
+  TWILIO_BOOKING_CONFIRMED_CONTENT_SID: trimOpt(process.env.TWILIO_BOOKING_CONFIRMED_CONTENT_SID),
+  TWILIO_MEMBERSHIP_WELCOME_CONTENT_SID: trimOpt(process.env.TWILIO_MEMBERSHIP_WELCOME_CONTENT_SID),
   TWILIO_SERVICE_REMINDER_CONTENT_SID: trimOpt(
     process.env.TWILIO_SERVICE_REMINDER_CONTENT_SID ?? process.env.TWILIO_SERVICE_REMINDER_TEMPLATE_SID
   ),
@@ -163,6 +175,10 @@ export const env = schema.parse({
   ),
   TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID),
   TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID),
+  TWILIO_OWNER_TRIAL_EXPIRED_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_TRIAL_EXPIRED_TEMPLATE_SID),
+  TWILIO_OWNER_TRIAL_EXPIRING_REMINDER_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_TRIAL_EXPIRING_REMINDER_TEMPLATE_SID),
+  TWILIO_OWNER_SUBSCRIPTION_EXPIRED_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_SUBSCRIPTION_EXPIRED_TEMPLATE_SID),
+  TWILIO_OWNER_SUBSCRIPTION_EXPIRING_REMINDER_TEMPLATE_SID: trimOpt(process.env.TWILIO_OWNER_SUBSCRIPTION_EXPIRING_REMINDER_TEMPLATE_SID),
   TWILIO_CUSTOMER_WELCOME_CONTENT_SID: trimOpt(
     process.env.TWILIO_CUSTOMER_WELCOME_CONTENT_SID ?? process.env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID
   ),

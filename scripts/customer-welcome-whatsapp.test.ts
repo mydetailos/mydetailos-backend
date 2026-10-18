@@ -29,7 +29,11 @@ describe("Customer Welcome WhatsApp Template & Parameters", () => {
   });
 
   it("supports TWILIO_CUSTOMER_WELCOME_CONTENT_SID or fallback default HX2656ed64ee960fb6995f9211b4b71c72", () => {
-    const validSids = ["HX2656ed64ee960fb6995f9211b4b71c72", "HXc25b2ea428f2a532f4356c73ff02e76c"];
+    const validSids = [
+      "HX2656ed64ee960fb6995f9211b4b71c72",
+      "HXc25b2ea428f2a532f4356c73ff02e76c",
+      "HXa15928c2342c1604e358f8152a79dd45",
+    ];
     const resolved =
       env.TWILIO_CUSTOMER_WELCOME_CONTENT_SID?.trim() ||
       env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID?.trim() ||
@@ -43,7 +47,8 @@ describe("Customer Welcome WhatsApp Template & Parameters", () => {
       env.TWILIO_CUSTOMER_WELCOME_CONTENT_SID?.trim() || env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID?.trim();
     assert.ok(
       customerWelcomeSid === "HX2656ed64ee960fb6995f9211b4b71c72" ||
-        customerWelcomeSid === "HXc25b2ea428f2a532f4356c73ff02e76c"
+        customerWelcomeSid === "HXc25b2ea428f2a532f4356c73ff02e76c" ||
+        customerWelcomeSid === "HXa15928c2342c1604e358f8152a79dd45"
     );
     assert.equal(
       env.TWILIO_AUTH_OTP_CONTENT_SID?.trim() || env.TWILIO_OTP_TEMPLATE_SID?.trim(),

@@ -7,6 +7,14 @@ import {
   buildOwnerTrialStartedWhatsAppMessage,
   ownerPlanActivatedTemplateVariables,
   ownerTrialStartedTemplateVariables,
+  ownerTrialExpiredTemplateVariables,
+  buildOwnerTrialExpiredWhatsAppMessage,
+  ownerSubscriptionExpiredTemplateVariables,
+  buildOwnerSubscriptionExpiredWhatsAppMessage,
+  ownerTrialExpiringReminderTemplateVariables,
+  buildOwnerTrialExpiringReminderWhatsAppMessage,
+  ownerSubscriptionExpiringReminderTemplateVariables,
+  buildOwnerSubscriptionExpiringReminderWhatsAppMessage,
 } from "../../lib/owner-trial-whatsapp.js";
 import { isResendConfigured, sendViaResend } from "../../services/resend-send.js";
 import {
@@ -27,8 +35,20 @@ export type OwnerTrialNotifyResult = {
 };
 
 function loginUrl(): string {
-  const raw = (env.FRONTEND_ORIGIN || "http://localhost:3000").trim();
-  return raw.split(",")[0]!.trim().replace(/\/$/, "") || "http://localhost:3000";
+  if (process.env.PUBLIC_APP_URL?.trim()) {
+    const base = process.env.PUBLIC_APP_URL.trim().replace(/\/$/, "");
+    return base.endsWith("/login") ? base : `${base}/login`;
+  }
+  const raw = (env.FRONTEND_ORIGIN || "").trim();
+  const first = raw.split(",")[0]?.trim().replace(/\/$/, "");
+  if (first && !first.includes("localhost") && !first.includes("127.0.0.1")) {
+    return first.endsWith("/login") ? first : `${first}/login`;
+  }
+  return "https://mydetailos.com/login";
+}
+
+function publicPortalUrl(): string {
+  return loginUrl();
 }
 
 function friendlyNotifyError(channel: "email" | "sms" | "whatsapp", raw: string): string {
@@ -199,6 +219,17 @@ async function sendOwnerChannels(opts: {
   return sent;
 }
 
+async function findOrgOwner(organizationId: string) {
+  return prisma.user.findFirst({
+    where: {
+      organizationId,
+      role: { in: ["SUPER_ADMIN", "ADMIN"] },
+    },
+    orderBy: { id: "asc" },
+    select: { name: true, email: true, phone: true },
+  });
+}
+
 /** After Razorpay/admin verifies a plan upgrade, renewal, or add-on as PAID. */
 export async function notifyOwnerPlanActivated(opts: {
   organizationId: string;
@@ -212,14 +243,7 @@ export async function notifyOwnerPlanActivated(opts: {
   extraUsers?: number;
   billNumber?: string | null;
 }): Promise<OwnerTrialNotifyResult | null> {
-  const owner = await prisma.user.findFirst({
-    where: {
-      organizationId: opts.organizationId,
-      role: { in: ["SUPER_ADMIN", "ADMIN"] },
-    },
-    orderBy: { id: "asc" },
-    select: { name: true, email: true, phone: true },
-  });
+  const owner = await findOrgOwner(opts.organizationId);
   if (!owner?.email && !owner?.phone) return null;
 
   const login = loginUrl();
@@ -279,5 +303,157 @@ export async function notifyOwnerPlanActivated(opts: {
     smsBody,
     emailSubject: subject,
     logTag: "plan-activated-notify",
+  });
+}
+
+/** When an organization's trial expires. */
+export async function notifyOwnerTrialExpired(opts: {
+  organizationId: string;
+  organizationName: string;
+  expirationDate: string;
+}): Promise<OwnerTrialNotifyResult> {
+  const owner = await findOrgOwner(opts.organizationId);
+  const portal = publicPortalUrl();
+  const waBody = buildOwnerTrialExpiredWhatsAppMessage({
+    ownerName: owner?.name || "there",
+    organizationName: opts.organizationName,
+    expirationDate: opts.expirationDate,
+    upgradeUrl: portal,
+  });
+
+  return sendOwnerChannels({
+    email: owner?.email || "",
+    phone: owner?.phone || "",
+    waBody,
+    waPayload: whatsappTemplateOrBody(
+      env.TWILIO_OWNER_TRIAL_EXPIRED_TEMPLATE_SID,
+      ownerTrialExpiredTemplateVariables({
+        ownerName: owner?.name || "there",
+        organizationName: opts.organizationName,
+        expirationDate: opts.expirationDate,
+        upgradeUrl: portal,
+      }),
+      waBody
+    ),
+    smsBody: `Hi ${owner?.name || "there"}, your free trial for ${opts.organizationName} on My Detail OS has expired. Upgrade: ${portal}`,
+    emailSubject: `Your My Detail OS free trial has expired`,
+    logTag: "trial-expired-notify",
+  });
+}
+
+/** When an organization's subscription expires. */
+export async function notifyOwnerSubscriptionExpired(opts: {
+  organizationId: string;
+  organizationName: string;
+  planName: string;
+  expirationDate: string;
+}): Promise<OwnerTrialNotifyResult> {
+  const owner = await findOrgOwner(opts.organizationId);
+  const portal = publicPortalUrl();
+  const waBody = buildOwnerSubscriptionExpiredWhatsAppMessage({
+    ownerName: owner?.name || "there",
+    organizationName: opts.organizationName,
+    planName: opts.planName,
+    expirationDate: opts.expirationDate,
+    renewalUrl: portal,
+  });
+
+  return sendOwnerChannels({
+    email: owner?.email || "",
+    phone: owner?.phone || "",
+    waBody,
+    waPayload: whatsappTemplateOrBody(
+      env.TWILIO_OWNER_SUBSCRIPTION_EXPIRED_TEMPLATE_SID,
+      ownerSubscriptionExpiredTemplateVariables({
+        ownerName: owner?.name || "there",
+        organizationName: opts.organizationName,
+        planName: opts.planName,
+        expirationDate: opts.expirationDate,
+        renewalUrl: portal,
+      }),
+      waBody
+    ),
+    smsBody: `Hi ${owner?.name || "there"}, your ${opts.planName} subscription for ${opts.organizationName} on My Detail OS has expired. Renew: ${portal}`,
+    emailSubject: `Your My Detail OS subscription has expired`,
+    logTag: "subscription-expired-notify",
+  });
+}
+
+/** Reminder sent before an organization's trial expires (e.g. 3 days or 1 day before). */
+export async function notifyOwnerTrialExpiringReminder(opts: {
+  organizationId: string;
+  organizationName: string;
+  timeRemaining: string;
+  expirationDate: string;
+}): Promise<OwnerTrialNotifyResult> {
+  const owner = await findOrgOwner(opts.organizationId);
+  const portal = publicPortalUrl();
+  const waBody = buildOwnerTrialExpiringReminderWhatsAppMessage({
+    ownerName: owner?.name || "there",
+    organizationName: opts.organizationName,
+    timeRemaining: opts.timeRemaining,
+    expirationDate: opts.expirationDate,
+    upgradeUrl: portal,
+  });
+
+  return sendOwnerChannels({
+    email: owner?.email || "",
+    phone: owner?.phone || "",
+    waBody,
+    waPayload: whatsappTemplateOrBody(
+      env.TWILIO_OWNER_TRIAL_EXPIRING_REMINDER_TEMPLATE_SID,
+      ownerTrialExpiringReminderTemplateVariables({
+        ownerName: owner?.name || "there",
+        organizationName: opts.organizationName,
+        timeRemaining: opts.timeRemaining,
+        expirationDate: opts.expirationDate,
+        upgradeUrl: portal,
+      }),
+      waBody
+    ),
+    smsBody: `Hi ${owner?.name || "there"}, friendly reminder: your free trial for ${opts.organizationName} on My Detail OS is expiring in ${opts.timeRemaining}. Upgrade: ${portal}`,
+    emailSubject: `Your My Detail OS free trial is expiring in ${opts.timeRemaining}`,
+    logTag: "trial-expiring-reminder-notify",
+  });
+}
+
+/** Reminder sent before an organization's subscription expires (e.g. 7 days or 3 days before). */
+export async function notifyOwnerSubscriptionExpiringReminder(opts: {
+  organizationId: string;
+  organizationName: string;
+  planName: string;
+  timeRemaining: string;
+  expirationDate: string;
+}): Promise<OwnerTrialNotifyResult> {
+  const owner = await findOrgOwner(opts.organizationId);
+  const portal = publicPortalUrl();
+  const waBody = buildOwnerSubscriptionExpiringReminderWhatsAppMessage({
+    ownerName: owner?.name || "there",
+    organizationName: opts.organizationName,
+    planName: opts.planName,
+    timeRemaining: opts.timeRemaining,
+    expirationDate: opts.expirationDate,
+    renewalUrl: portal,
+  });
+
+  return sendOwnerChannels({
+    email: owner?.email || "",
+    phone: owner?.phone || "",
+    waBody,
+    waPayload: whatsappTemplateOrBody(
+      env.TWILIO_OWNER_SUBSCRIPTION_EXPIRING_REMINDER_TEMPLATE_SID,
+      ownerSubscriptionExpiringReminderTemplateVariables({
+        ownerName: owner?.name || "there",
+        organizationName: opts.organizationName,
+        planName: opts.planName,
+        timeRemaining: opts.timeRemaining,
+        expirationDate: opts.expirationDate,
+        renewalUrl: portal,
+      }),
+      waBody
+    ),
+    smsBody: `Hi ${owner?.name || "there"}, friendly reminder: your ${opts.planName} subscription for ${opts.organizationName} on My Detail OS is expiring in ${opts.timeRemaining}. Renew: ${portal}`,
+    emailSubject: `Your My Detail OS subscription is expiring in ${opts.timeRemaining}`,
+    logTag: "subscription-expiring-reminder-notify",
   });
 }
