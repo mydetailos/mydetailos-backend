@@ -100,4 +100,89 @@ describe("User Creation Unique ID and Collision Protection", () => {
       }
     );
   });
+
+  it("auto-allocates next available employeeCode when omitted", async () => {
+    const email = `test-no-empcode-${Date.now()}@testexample.com`;
+    const result = await createUserApi({
+      name: "No EmpCode User",
+      email,
+      phone: "+919999999994",
+      role: "MECHANIC",
+      branchId: testBranchId,
+      organizationId: testOrgId,
+    });
+
+    assert.ok(result.user);
+    assert.ok(result.user.employeeCode, "employeeCode must be auto-assigned");
+    assert.match(result.user.employeeCode, /^EMP-\d+$/);
+    createdUserIds.push(result.user.id);
+  });
+
+  it("auto-advances to next unique employeeCode when an EMP-xxx collision occurs", async () => {
+    // Find an existing user with an employeeCode or use EMP-001
+    const existingWithCode = await prisma.user.findFirst({
+      where: { employeeCode: { not: null } },
+      select: { employeeCode: true },
+    });
+    const clashingCode = existingWithCode?.employeeCode || "EMP-001";
+
+    const email = `test-empcode-clash-${Date.now()}@testexample.com`;
+    // Attempt to create with the exact same clashing code
+    const result = await createUserApi({
+      name: "EMP Code Clash User",
+      email,
+      phone: "+919999999995",
+      role: "MECHANIC",
+      branchId: testBranchId,
+      organizationId: testOrgId,
+      employeeCode: clashingCode,
+    });
+
+    assert.ok(result.user);
+    assert.ok(result.user.employeeCode);
+    assert.notEqual(
+      result.user.employeeCode,
+      clashingCode,
+      "Should auto-advance to a new employeeCode instead of failing"
+    );
+    assert.match(result.user.employeeCode, /^EMP-\d+$/);
+    createdUserIds.push(result.user.id);
+  });
+
+  it("rejects duplicate custom non-EMP employeeCode with validation error", async () => {
+    const customCode = `CUST-${Date.now().toString(36)}`;
+    const email1 = `test-custom-code-1-${Date.now()}@testexample.com`;
+    const user1 = await createUserApi({
+      name: "Custom Code User 1",
+      email: email1,
+      phone: "+919999999996",
+      role: "MECHANIC",
+      branchId: testBranchId,
+      organizationId: testOrgId,
+      employeeCode: customCode,
+    });
+    createdUserIds.push(user1.user.id);
+
+    const email2 = `test-custom-code-2-${Date.now()}@testexample.com`;
+    await assert.rejects(
+      async () => {
+        await createUserApi({
+          name: "Custom Code User 2",
+          email: email2,
+          phone: "+919999999997",
+          role: "MECHANIC",
+          branchId: testBranchId,
+          organizationId: testOrgId,
+          employeeCode: customCode,
+        });
+      },
+      (err: any) => {
+        return (
+          err.message?.includes("Employee code is already in use") &&
+          err.code === "VALIDATION"
+        );
+      }
+    );
+  });
 });
+

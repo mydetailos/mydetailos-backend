@@ -110,6 +110,35 @@ export async function listStaffDirectoryApi(opts: {
   return rows.map(toStaffDirectoryEntry);
 }
 
+/**
+ * Allocate next available global employeeCode like EMP-001, EMP-002, etc.
+ * Guarantees no collision with existing codes in the database.
+ */
+export async function allocateNextEmployeeCode(): Promise<string> {
+  const usersWithEmp = await prisma.user.findMany({
+    where: { employeeCode: { startsWith: "EMP-" } },
+    select: { employeeCode: true },
+  });
+  let maxNumber = 0;
+  for (const u of usersWithEmp) {
+    if (u.employeeCode && /^EMP-\d+$/i.test(u.employeeCode)) {
+      const num = parseInt(u.employeeCode.replace(/^EMP-/i, ""), 10);
+      if (!Number.isNaN(num) && num > maxNumber) {
+        maxNumber = num;
+      }
+    }
+  }
+  let candidateNum = maxNumber + 1;
+  while (true) {
+    const candidate = `EMP-${String(candidateNum).padStart(3, "0")}`;
+    const exists = await prisma.user.findFirst({ where: { employeeCode: candidate } });
+    if (!exists) {
+      return candidate;
+    }
+    candidateNum++;
+  }
+}
+
 export async function createUserApi(input: {
   id?: string;
   name: string;
@@ -195,6 +224,20 @@ export async function createUserApi(input: {
   const passwordHash = await bcrypt.hash(plainPassword, 10);
   const now = new Date();
 
+  let resolvedEmployeeCode = nullIfEmpty(input.employeeCode) ?? null;
+  if (resolvedEmployeeCode) {
+    const clash = await prisma.user.findFirst({ where: { employeeCode: resolvedEmployeeCode } });
+    if (clash) {
+      if (/^EMP-\d+$/i.test(resolvedEmployeeCode)) {
+        resolvedEmployeeCode = await allocateNextEmployeeCode();
+      } else {
+        throw AppError.validation("Employee code is already in use.");
+      }
+    }
+  } else {
+    resolvedEmployeeCode = await allocateNextEmployeeCode();
+  }
+
   const data: Prisma.UserUncheckedCreateInput = {
     id: finalUserId,
     name: input.name,
@@ -217,21 +260,13 @@ export async function createUserApi(input: {
     totalIncentiveEarned: input.totalIncentiveEarned ?? null,
     birthday: nullIfEmpty(input.birthday) ?? null,
     anniversary: nullIfEmpty(input.anniversary) ?? null,
-    employeeCode: nullIfEmpty(input.employeeCode) ?? null,
+    employeeCode: resolvedEmployeeCode,
     designation: nullIfEmpty(input.designation) ?? null,
     department: nullIfEmpty(input.department) ?? null,
     joiningDate: nullIfEmpty(input.joiningDate) ?? null,
     notes: nullIfEmpty(input.notes) ?? null,
     permissions: resolvePermissionsOnCreate(input.role, input.permissions, input.accessLevel),
   };
-
-  const code = data.employeeCode as string | null;
-  if (code) {
-    const clash = await prisma.user.findFirst({ where: { employeeCode: code } });
-    if (clash) {
-      throw AppError.validation("Employee code is already in use.");
-    }
-  }
 
   let row: PrismaUser;
   try {
@@ -250,9 +285,21 @@ export async function createUserApi(input: {
         Array.isArray(target)
           ? target.includes("id")
           : target === "id" || msg.includes("(id)");
-      if (isIdClash) {
-        const fallbackId = `usr-${Date.now().toString(36)}${randomBytes(6).toString("hex")}`;
-        row = await prisma.user.create({ data: { ...data, id: fallbackId } });
+      const isEmployeeCodeClash =
+        Array.isArray(target)
+          ? target.includes("employeeCode")
+          : target === "employeeCode" || msg.includes("employeeCode");
+
+      if (isIdClash || isEmployeeCodeClash) {
+        const fallbackId = isIdClash
+          ? `usr-${Date.now().toString(36)}${randomBytes(6).toString("hex")}`
+          : data.id;
+        const fallbackCode = isEmployeeCodeClash
+          ? await allocateNextEmployeeCode()
+          : data.employeeCode;
+        row = await prisma.user.create({
+          data: { ...data, id: fallbackId, employeeCode: fallbackCode },
+        });
       } else {
         throw err;
       }
