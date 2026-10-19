@@ -62,6 +62,7 @@ const schema = z.object({
   TWILIO_JOB_DELIVERED_CONTENT_SID: z.string().optional(),
   TWILIO_BOOKING_CONFIRMED_CONTENT_SID: z.string().optional(),
   TWILIO_MEMBERSHIP_WELCOME_CONTENT_SID: z.string().optional(),
+  TWILIO_PICKUP_DROP_UPDATE_CONTENT_SID: z.string().optional(),
   /** Approved Utility templates (HX…). When unset, WhatsApp falls back to free-form session messages. */
   TWILIO_SERVICE_REMINDER_CONTENT_SID: z.string().optional(),
   TWILIO_SERVICE_REMINDER_TEMPLATE_SID: z.string().optional(),
@@ -79,6 +80,9 @@ const schema = z.object({
   TWILIO_CUSTOMER_WELCOME_CONTENT_SID: z.string().optional(),
   /** Marketing CTA with a fixed portal button URL and no variables. */
   TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID: z.string().optional(),
+  /** Approved Marketing template for Festive Offers and Coupons. */
+  TWILIO_CUSTOMER_OFFER_CONTENT_SID: z.string().optional(),
+  TWILIO_CUSTOMER_OFFER_TEMPLATE_SID: z.string().optional(),
   /** Approved WhatsApp Authentication template (Content SID: HX…) for Login OTP. */
   TWILIO_AUTH_OTP_CONTENT_SID: z.string().optional(),
   TWILIO_OTP_TEMPLATE_SID: z.string().optional(),
@@ -158,6 +162,7 @@ export const env = schema.parse({
   TWILIO_JOB_DELIVERED_CONTENT_SID: trimOpt(process.env.TWILIO_JOB_DELIVERED_CONTENT_SID),
   TWILIO_BOOKING_CONFIRMED_CONTENT_SID: trimOpt(process.env.TWILIO_BOOKING_CONFIRMED_CONTENT_SID),
   TWILIO_MEMBERSHIP_WELCOME_CONTENT_SID: trimOpt(process.env.TWILIO_MEMBERSHIP_WELCOME_CONTENT_SID),
+  TWILIO_PICKUP_DROP_UPDATE_CONTENT_SID: trimOpt(process.env.TWILIO_PICKUP_DROP_UPDATE_CONTENT_SID),
   TWILIO_SERVICE_REMINDER_CONTENT_SID: trimOpt(
     process.env.TWILIO_SERVICE_REMINDER_CONTENT_SID ?? process.env.TWILIO_SERVICE_REMINDER_TEMPLATE_SID
   ),
@@ -184,6 +189,12 @@ export const env = schema.parse({
   ),
   TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID: trimOpt(
     process.env.TWILIO_CUSTOMER_WELCOME_CONTENT_SID ?? process.env.TWILIO_CUSTOMER_PORTAL_TEMPLATE_SID
+  ),
+  TWILIO_CUSTOMER_OFFER_CONTENT_SID: trimOpt(
+    process.env.TWILIO_CUSTOMER_OFFER_CONTENT_SID ?? process.env.TWILIO_CUSTOMER_OFFER_TEMPLATE_SID
+  ),
+  TWILIO_CUSTOMER_OFFER_TEMPLATE_SID: trimOpt(
+    process.env.TWILIO_CUSTOMER_OFFER_CONTENT_SID ?? process.env.TWILIO_CUSTOMER_OFFER_TEMPLATE_SID
   ),
   TWILIO_AUTH_OTP_CONTENT_SID: trimOpt(
     process.env.TWILIO_AUTH_OTP_CONTENT_SID ?? process.env.TWILIO_OTP_TEMPLATE_SID

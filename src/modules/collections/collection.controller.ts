@@ -67,7 +67,7 @@ function entityParam(req: Request): string {
   return Array.isArray(raw) ? raw[0]! : raw!;
 }
 
-function writeContext(req: Request, organizationId: string): CollectionWriteContext {
+export function writeContext(req: Request, organizationId: string): CollectionWriteContext {
   const hasJobCardPricingPermission = Boolean(
     req.auth &&
       (req.auth.role === "SUPER_ADMIN" || req.auth.permissions?.includes("JOB_CARD_PRICING"))

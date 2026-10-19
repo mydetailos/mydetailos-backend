@@ -26,6 +26,7 @@
     "grant:job-card-pricing": "tsx scripts/grant-job-card-pricing.ts",
     "test:whatsapp-otp": "tsx --test scripts/whatsapp-login-otp.test.ts",
     "test:user-id": "tsx --test scripts/user-create-unique-id.test.ts",
+    "test:user-guard": "tsx --test scripts/user-superadmin-guard.test.ts",
     "test:customer-welcome": "tsx --test scripts/customer-welcome-whatsapp.test.ts",
     "test:plan-catalog": "tsx --test scripts/plan-catalog.test.ts",
     "test:subscription-lock": "tsx --test scripts/subscription-lock.test.ts",

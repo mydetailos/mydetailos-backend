@@ -139,6 +139,10 @@ export async function postUser(req: Request, res: Response, next: NextFunction) 
       return;
     }
     const body = createUserSchema.parse(req.body);
+    if (body.role === "SUPER_ADMIN") {
+      forbidden(res, "Cannot create a user with Super Admin role.");
+      return;
+    }
     if (!canAssignUserRole(req.auth.role, body.role)) {
       forbidden(res, "Only Super Admin can assign user roles.");
       return;
@@ -208,8 +212,8 @@ export async function deleteUser(req: Request, res: Response, next: NextFunction
       res.status(404).json({ data: null, error: { message: "User not found" } });
       return;
     }
-    if (existing.role === "SUPER_ADMIN" && req.auth.role !== "SUPER_ADMIN") {
-      forbidden(res, "Only Super Admin can delete a Super Admin account.");
+    if (existing.role === "SUPER_ADMIN") {
+      forbidden(res, "Super Admin accounts cannot be deleted.");
       return;
     }
     if (existing.role === "PLATFORM_OWNER") {
@@ -241,6 +245,14 @@ export async function putUser(req: Request, res: Response, next: NextFunction) {
       }
       const existing = await prisma.user.findUnique({ where: { id } });
       if (existing && existing.role !== body.role) {
+        if (existing.role === "SUPER_ADMIN") {
+          forbidden(res, "Super Admin role cannot be changed.");
+          return;
+        }
+        if (body.role === "SUPER_ADMIN") {
+          forbidden(res, "Cannot assign Super Admin role.");
+          return;
+        }
         if (req.auth.role !== "SUPER_ADMIN") {
           forbidden(res, "Only Super Admin can change user roles.");
           return;

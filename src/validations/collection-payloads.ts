@@ -191,10 +191,39 @@ export const staffTargetPayloadSchema = z
   })
   .passthrough();
 
+/** Individual service usage entry within a membership subscription. */
+export const membershipUsageHistorySchema = z
+  .object({
+    membershipId: z.string().optional(),
+    serviceCatalogId: z.string().optional(),
+    serviceName: z.string().optional(),
+    quantity: z.number().optional(),
+    usedAt: z.string().optional(),
+    jobCardId: z.string().optional(),
+  })
+  .passthrough();
+
+/** Customer membership subscription object. */
+export const customerMembershipSubscriptionSchema = z
+  .object({
+    id: z.string().optional(),
+    customerId: z.string().optional(),
+    packageId: z.string().optional(),
+    packageName: z.string().optional(),
+    vehicleId: z.string().optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    status: z.string().optional(),
+    price: z.number().optional(),
+    invoiceId: z.string().optional(),
+    usageHistory: z.array(membershipUsageHistorySchema).optional(),
+  })
+  .passthrough();
+
 export const membershipPayloadSchema = z
   .object({
     packages: z.array(z.unknown()).optional(),
-    subscriptions: z.array(z.unknown()).optional(),
+    subscriptions: z.array(customerMembershipSubscriptionSchema).optional(),
   })
   .passthrough();
 

@@ -29,6 +29,7 @@ import { rewardsRouter } from "./modules/rewards/rewards.routes.js";
 import { customerAuthRouter } from "./modules/customers/customer-auth.routes.js";
 import { customerBootstrapRouter } from "./modules/customers/customer-bootstrap.routes.js";
 import { customerInspectionsRouter } from "./modules/customers/customer-inspections.routes.js";
+import { membershipRouter } from "./modules/membership/membership.routes.js";
 import { isSwaggerEnabled, registerSwagger } from "./docs/register-swagger.js";
 import { publicRouter } from "./routes/public.routes.js";
 import { webhooksRouter } from "./routes/webhooks.routes.js";
@@ -280,6 +281,8 @@ app.use("/api/rewards", rewardsRouter);
 app.use("/api/auth/customer", customerAuthRouter);
 app.use("/api/customer", customerBootstrapRouter);
 app.use("/api/customer/inspections", customerInspectionsRouter);
+app.use("/api/membership", membershipRouter);
+app.use("/api/v1/membership", membershipRouter);
 
 app.use(errorHandler);
 

@@ -169,12 +169,25 @@ async function readMembershipsForCustomer(
       }
     }
 
+    const rawUsage = Array.isArray(sub.usageHistory) ? (sub.usageHistory as Array<Record<string, unknown>>) : [];
+    const usageHistory = rawUsage.map((u) => {
+      if (!u || typeof u !== "object") return u;
+      return {
+        ...u,
+        membershipId:
+          typeof u.membershipId === "string" && u.membershipId.trim()
+            ? u.membershipId.trim()
+            : id,
+      };
+    });
+
     membershipsById.set(id, {
       ...sub,
       id,
       status,
       packageName: resolvedPackageName,
       price: resolvedPrice,
+      usageHistory,
     });
   }
 

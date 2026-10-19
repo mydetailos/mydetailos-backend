@@ -140,8 +140,8 @@ export async function createUserApi(input: {
   /** Used when permissions is omitted or [] — mirrors frontend Add User access radios. */
   accessLevel?: StaffAccessLevel;
 }): Promise<{ user: ReturnType<typeof toApiUser>; temporaryPassword?: string }> {
-  if (input.role === "PLATFORM_OWNER") {
-    throw AppError.validation("Cannot create PLATFORM_OWNER accounts via studio user management.");
+  if (input.role === "PLATFORM_OWNER" || input.role === "SUPER_ADMIN") {
+    throw AppError.validation(`Cannot create ${input.role} accounts via studio user management.`);
   }
 
   const branch = await prisma.branch.findUnique({ where: { id: input.branchId } });

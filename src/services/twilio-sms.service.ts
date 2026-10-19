@@ -278,16 +278,26 @@ export async function sendWhatsAppMessage(
   const isTemplate = typeof messageBodyOrTemplate === "object" && messageBodyOrTemplate !== null;
 
   if (isTemplate) {
+    let contentVariablesJson: string | undefined = undefined;
+    if (
+      messageBodyOrTemplate.contentVariables &&
+      Object.keys(messageBodyOrTemplate.contentVariables).length > 0
+    ) {
+      const sanitized: Record<string, string> = {};
+      for (const [k, v] of Object.entries(messageBodyOrTemplate.contentVariables)) {
+        // Meta Content API strictly forbids newlines (\r, \n) and tabs (\t) in variable values.
+        // Unsanitized newlines trigger Twilio Error 21656: "The Content Variables parameter is invalid."
+        sanitized[k] =
+          typeof v === "string" ? v.replace(/[\r\n\t]+/g, " — ").trim() : String(v ?? "");
+      }
+      contentVariablesJson = JSON.stringify(sanitized);
+    }
+
     const msg = await getClient().messages.create({
       from,
       to,
       contentSid: messageBodyOrTemplate.contentSid.trim(),
-      ...(messageBodyOrTemplate.contentVariables &&
-      Object.keys(messageBodyOrTemplate.contentVariables).length > 0
-        ? {
-            contentVariables: JSON.stringify(messageBodyOrTemplate.contentVariables),
-          }
-        : {}),
+      ...(contentVariablesJson ? { contentVariables: contentVariablesJson } : {}),
     });
     const out: TwilioWhatsAppSendResult = {
       sid: msg.sid,

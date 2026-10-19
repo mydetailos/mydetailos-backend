@@ -8,7 +8,12 @@ import { fileURLToPath } from "node:url";
 import { PERMISSION_KEYS as backendKeys } from "../src/constants/permission-keys.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const fePath = join(__dirname, "../../frontend/src/lib/permission-keys.ts");
+const feCandidates = [
+  join(__dirname, "../../frontend/src/lib/permission-keys.ts"),
+  join(__dirname, "../../mydetailos-workshop/src/lib/permission-keys.ts"),
+];
+import { existsSync } from "node:fs";
+const fePath = feCandidates.find((p) => existsSync(p)) || feCandidates[0]!;
 const feSrc = readFileSync(fePath, "utf8");
 
 const match = feSrc.match(/export const PERMISSION_KEYS = \[([\s\S]*?)\] as const/);
