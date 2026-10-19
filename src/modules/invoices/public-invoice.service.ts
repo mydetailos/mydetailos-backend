@@ -73,19 +73,23 @@ function sanitizeInvoiceForPublic(invoice: Record<string, unknown>): Record<stri
  * Omits other customer invoices, all-branch dumps, and sensitive settings/PDF blobs.
  */
 export async function getPublicInvoiceView(invoiceId: string) {
-  const invoiceRaw = (await getCollectionItem("invoices", invoiceId)) as Record<
-    string,
-    unknown
-  > | null;
-  if (!invoiceRaw) {
+  // 1. Fetch invoice row with its organization relation
+  const invoiceRow = await prisma.appJsonRow.findUnique({
+    where: { collection_entityId: { collection: "invoices", entityId: invoiceId } },
+    include: { organization: true },
+  });
+  if (!invoiceRow) {
     throw AppError.notFound("Invoice not found");
   }
-
+  const invoiceRaw = (invoiceRow.payload && typeof invoiceRow.payload === "object"
+    ? invoiceRow.payload
+    : {}) as Record<string, unknown>;
+  const orgId = invoiceRow.organizationId;
+  const organization = invoiceRow.organization;
   const jobCardId = typeof invoiceRaw.jobCardId === "string" ? invoiceRaw.jobCardId : "";
   const jobCardRaw = jobCardId
-    ? ((await getCollectionItem("jobCards", jobCardId)) as Record<string, unknown> | null)
+    ? ((await getCollectionItem("jobCards", jobCardId, orgId)) as Record<string, unknown> | null)
     : null;
-
   const vehicleId =
     jobCardRaw && typeof jobCardRaw.vehicleId === "string" ? jobCardRaw.vehicleId : "";
   const vehicleRow = vehicleId
@@ -93,21 +97,47 @@ export async function getPublicInvoiceView(invoiceId: string) {
     : null;
   const vehicleApi = vehicleRow ? toApiVehicle(vehicleRow) : null;
 
-  const settingsRow = await prisma.appJsonRow.findUnique({
-    where: { collection_entityId: { collection: "appSettings", entityId: "default" } },
-  });
-  const settingsPayload =
-    settingsRow?.payload && typeof settingsRow.payload === "object"
-      ? (settingsRow.payload as Record<string, unknown>)
-      : null;
+  // 2. Fetch scoped appSettings for this specific organization
+  const scopedSettings = (await getCollectionItem(
+    "appSettings",
+    "default",
+    orgId
+  )) as Record<string, unknown> | null;
+  const rawSettings =
+    (pickKeys(scopedSettings ?? undefined, PUBLIC_SETTINGS_KEYS) || {}) as Record<string, unknown>;
+
+  // 3. Fallback to organization.name if businessName is unset or matches platform defaults
+  const isDefaultName =
+    !rawSettings.businessName ||
+    typeof rawSettings.businessName !== "string" ||
+    ["my detail os", "mydetailos"].includes(rawSettings.businessName.trim().toLowerCase());
+  const resolvedBusinessName = isDefaultName
+    ? organization?.name ||
+      (typeof rawSettings.businessName === "string" ? rawSettings.businessName : "MY DETAIL OS")
+    : rawSettings.businessName;
+  const businessSettings = {
+    ...rawSettings,
+    businessName: resolvedBusinessName,
+  };
 
   return {
-    invoice: sanitizeInvoiceForPublic(invoiceRaw),
+    invoice: sanitizeInvoiceForPublic({
+      ...invoiceRaw,
+      organizationId: orgId,
+      organizationName: organization?.name,
+    }),
     jobCard: pickKeys(jobCardRaw ?? undefined, PUBLIC_JOB_CARD_KEYS),
     vehicle: pickKeys(
       vehicleApi ? (vehicleApi as unknown as Record<string, unknown>) : undefined,
       PUBLIC_VEHICLE_KEYS
     ),
-    businessSettings: pickKeys(settingsPayload ?? undefined, PUBLIC_SETTINGS_KEYS),
+    businessSettings,
+    organization: organization
+      ? {
+          id: organization.id,
+          name: organization.name,
+          slug: organization.slug,
+        }
+      : null,
   };
 }
