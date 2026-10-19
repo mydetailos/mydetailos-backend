@@ -53,13 +53,28 @@ export async function upsertAttendanceRecord(req: Request, res: Response, next: 
       res.status(404).json({ data: null, error: { message: "Staff member not found" } });
       return;
     }
-    const existing = await prisma.attendance.findFirst({
-      where: { staffId: staff.id, date: body.date },
-    });
+    const idParam = req.params.id;
+    const id = typeof idParam === "string" && idParam.trim() ? idParam.trim() : undefined;
+    const existing = id
+      ? await prisma.attendance.findUnique({ where: { id } })
+      : await prisma.attendance.findFirst({
+          where: { staffId: staff.id, date: body.date },
+        });
+
+    if (id && !existing) {
+      res.status(404).json({ data: null, error: { message: "Attendance record not found" } });
+      return;
+    }
+
     const record = existing
       ? await prisma.attendance.update({
           where: { id: existing.id },
           data: {
+            staffId: staff.id,
+            staffName: staff.name,
+            staffRole: staff.role,
+            branchId: staff.branchId,
+            date: body.date,
             checkIn: body.checkIn ?? null,
             checkOut: body.checkOut ?? null,
             durationMinutes: body.durationMinutes ?? null,
