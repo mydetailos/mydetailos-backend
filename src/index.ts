@@ -163,6 +163,35 @@ app.get("/api/public/invoices/:id", async (req, res, next) => {
   }
 });
 
+app.get("/api/public/subscription-bills/:id", async (req, res, next) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id!;
+    const bill = await prisma.subscriptionBill.findUnique({
+      where: { id },
+      include: {
+        organization: { select: { name: true, slug: true } },
+        payment: { select: { status: true, txnReference: true } },
+      },
+    });
+    if (!bill) {
+      return res.status(404).json({ error: "Subscription bill not found", data: null });
+    }
+    const paymentStatus = bill.payment?.status ?? "PAID";
+    const txnReference = bill.payment?.txnReference ?? null;
+    res.json({
+      data: {
+        ...bill,
+        paymentStatus,
+        txnReference,
+        organizationName: bill.organization?.name || "Workshop",
+      },
+      error: null,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 app.get("/api/public/job-cards/:secureToken/photos", async (req, res, next) => {
   try {
     const secureToken = Array.isArray(req.params.secureToken)
