@@ -98,9 +98,11 @@ export function buildOwnerPlanActivatedWhatsAppMessage(opts: {
   if (opts.billNumber) lines.push(`Bill: ${opts.billNumber}`);
   if (opts.expiresAt) lines.push(`Valid until: ${opts.expiresAt}`);
   if (opts.invoiceUrl) {
-    lines.push(``, `📎 *View & Download Tax Invoice:*`, opts.invoiceUrl);
+    lines.push(``, `View & download bill: ${opts.invoiceUrl}`);
+  } else {
+    lines.push(``, `Login here: ${login}`);
   }
-  lines.push(``, `Login here: ${login}`, ``, `Thank you,`, `Team MY DETAIL OS`);
+  lines.push(``, `Thank you,`, `Team MY DETAIL OS`);
   return lines.join("\n");
 }
 

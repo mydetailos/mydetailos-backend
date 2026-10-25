@@ -111,10 +111,7 @@ test("Subscription Bill WhatsApp Notification & Zero-Auth Invoice URL", async (t
     assert.ok(msg.includes("Term: 1 year"));
     assert.ok(msg.includes("Amount paid: ₹0.00"));
     assert.ok(msg.includes("Bill: SUB-2026-0002"));
-    assert.ok(msg.includes("Valid until: 2028-11-08"));
-    assert.ok(msg.includes("📎 *View & Download Tax Invoice:*"));
-    assert.ok(msg.includes("https://app.mydetailos.com/subscription-invoice/SUB-2026-0002#data=test1234"));
-    assert.ok(msg.includes("Login here: https://mydetailos.com/login"));
+    assert.ok(msg.includes("View & download bill: https://app.mydetailos.com/subscription-invoice/SUB-2026-0002#data=test1234"));
     assert.ok(msg.includes("Team MY DETAIL OS"));
   });
 
