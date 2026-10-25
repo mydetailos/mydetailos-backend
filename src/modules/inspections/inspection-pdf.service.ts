@@ -436,7 +436,7 @@ export async function renderInspectionPdf(
   if (hasExteriorCondition) {
     try {
       const conditionSvg = buildVehicleConditionSvg(report);
-      const pngBuf = await sharp(Buffer.from(conditionSvg.markup)).png({ density: 150 }).toBuffer();
+      const pngBuf = await sharp(Buffer.from(conditionSvg.markup), { density: 150 }).png().toBuffer();
       const imgH = (contentWidth * conditionSvg.height) / conditionSvg.width;
       ensureSpace(imgH + 24);
       drawSectionHeading(`VEHICLE EXTERIOR CONDITION (${vehicleConditions.length})`);
