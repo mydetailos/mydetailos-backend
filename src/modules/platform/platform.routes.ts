@@ -16,6 +16,7 @@ import {
   postPlatformOrganizationBranch,
   listPlatformRenewals,
   listPlatformBills,
+  postPlatformBillSendWhatsApp,
   listPlatformPayments,
   listPlatformAudit,
   listPlatformOrganizationActivity,
@@ -93,6 +94,7 @@ platformRouter.get("/organizations/:orgId/activity", listPlatformOrganizationAct
 // Cross-org data endpoints
 platformRouter.get("/renewals", listPlatformRenewals);
 platformRouter.get("/bills", listPlatformBills);
+platformRouter.post("/bills/:billId/send-whatsapp", postPlatformBillSendWhatsApp);
 platformRouter.get("/payments", listPlatformPayments);
 platformRouter.get("/audit", listPlatformAudit);
 platformRouter.get("/referrals", listPlatformReferrals);

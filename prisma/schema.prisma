@@ -320,7 +320,7 @@ model Branch {
   managerName       String?
   managerPhone      String?
   organizationId    String
-  organization      Organization @relation(fields: [organizationId], references: [id])
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   users             User[]
   attendanceRecords Attendance[]
   inspectionReports InspectionReport[]
@@ -349,9 +349,9 @@ model User {
   joiningDate            String?
   role                   UserRole
   branchId               String
-  branch                 Branch       @relation(fields: [branchId], references: [id])
+  branch                 Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
   organizationId         String
-  organization           Organization @relation(fields: [organizationId], references: [id])
+  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   avatar                 String?
   isActive               Boolean      @default(true)
   emailVerified          Boolean      @default(false)
@@ -415,7 +415,7 @@ model Customer {
   avatar         String?
   createdAt      DateTime
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   vehicles       Vehicle[]
 
   /**
@@ -467,7 +467,7 @@ model Vehicle {
   vinNumber             String?
   previousOwners        Json?
   organizationId        String
-  organization          Organization   @relation(fields: [organizationId], references: [id])
+  organization          Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   createdByUserId       String?
   updatedByUserId       String?
@@ -534,7 +534,7 @@ model Party {
   customerId         String?                @unique
   vendorKey          String?
   organizationId     String
-  organization       Organization           @relation(fields: [organizationId], references: [id])
+  organization       Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   shippingAddresses  PartyShippingAddress[]
@@ -652,7 +652,7 @@ model AppJsonRow {
   collection     String
   entityId       String
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   payload        Json
   createdAt      DateTime     @default(now()) @db.Timestamptz(6)
   updatedAt      DateTime     @updatedAt

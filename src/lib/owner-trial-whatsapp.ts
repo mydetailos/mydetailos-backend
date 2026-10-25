@@ -70,6 +70,7 @@ export function buildOwnerPlanActivatedWhatsAppMessage(opts: {
   extraBranches?: number;
   extraUsers?: number;
   billNumber?: string | null;
+  invoiceUrl?: string | null;
 }): string {
   const first = firstNameFrom(opts.ownerName);
   const login = opts.loginUrl.replace(/\/$/, "");
@@ -96,6 +97,9 @@ export function buildOwnerPlanActivatedWhatsAppMessage(opts: {
   lines.push(`Amount paid: ₹${opts.amount.toFixed(2)}`);
   if (opts.billNumber) lines.push(`Bill: ${opts.billNumber}`);
   if (opts.expiresAt) lines.push(`Valid until: ${opts.expiresAt}`);
+  if (opts.invoiceUrl) {
+    lines.push(``, `📎 *View & Download Tax Invoice:*`, opts.invoiceUrl);
+  }
   lines.push(``, `Login here: ${login}`, ``, `Thank you,`, `Team MY DETAIL OS`);
   return lines.join("\n");
 }
@@ -110,7 +114,9 @@ export function ownerPlanActivatedTemplateVariables(opts: {
   loginUrl: string;
   expiresAt?: string | null;
   billNumber?: string | null;
+  invoiceUrl?: string | null;
 }): Record<string, string> {
+  const targetLink = opts.invoiceUrl?.trim() || opts.loginUrl.replace(/\/$/, "");
   return {
     "1": firstNameFrom(opts.ownerName),
     "2": opts.organizationName,
@@ -119,7 +125,7 @@ export function ownerPlanActivatedTemplateVariables(opts: {
     "5": `₹${opts.amount.toFixed(2)}`,
     "6": opts.billNumber?.trim() || "N/A",
     "7": opts.expiresAt?.trim() || "see app",
-    "8": opts.loginUrl.replace(/\/$/, ""),
+    "8": targetLink,
   };
 }
 

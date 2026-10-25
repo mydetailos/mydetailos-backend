@@ -8,8 +8,20 @@ function digitsOnly(s: string): string {
 /** Match seed phones like +91-9876543210 to the last 10 digits entered in the UI. */
 export async function findActiveUserByTenDigitPhone(ten: string): Promise<User | null> {
   if (ten.length !== 10) return null;
-  const users = await prisma.user.findMany({ where: { isActive: true } });
+  const users = await prisma.user.findMany({
+    where: { isActive: true },
+    include: {
+      organization: {
+        select: { id: true, isActive: true },
+      },
+    },
+  });
   for (const u of users) {
+    if (u.role !== "PLATFORM_OWNER") {
+      if (!u.organization || !u.organization.isActive) {
+        continue;
+      }
+    }
     const d = digitsOnly(u.phone);
     if (d.endsWith(ten)) return u;
   }

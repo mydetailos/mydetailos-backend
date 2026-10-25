@@ -25,6 +25,7 @@ import {
   convertTrialSubscription,
   provisionOrganization,
 } from "../organization/organization-provision.service.js";
+import { sendSubscriptionBillWhatsAppNotification } from "../organization/subscription-bill-notify.service.js";
 import { env } from "../../config/env.js";
 import { normalizePlanCode, parseAllowedTerms, parsePlanLimits } from "../../lib/plan-catalog.js";
 import type { SubscriptionPricingPatch } from "../../lib/subscription-pricing.js";
@@ -100,6 +101,10 @@ export async function getPlatformDashboard(req: Request, res: Response, next: Ne
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
+    const customerOrgFilter: Prisma.OrganizationWhereInput = {
+      id: { notIn: ["org-platform", "org-default"] },
+    };
+
     const [
       orgTotal,
       orgActive,
@@ -109,11 +114,14 @@ export async function getPlatformDashboard(req: Request, res: Response, next: Ne
       pendingPayments,
       activeReferrals,
     ] = await Promise.all([
-      prisma.organization.count(),
-      prisma.organization.count({ where: { isActive: true } }),
-      prisma.organization.count({ where: { isActive: false } }),
+      prisma.organization.count({ where: customerOrgFilter }),
+      prisma.organization.count({ where: { ...customerOrgFilter, isActive: true } }),
+      prisma.organization.count({ where: { ...customerOrgFilter, isActive: false } }),
       prisma.organizationSubscription.groupBy({
         by: ["status"],
+        where: {
+          organizationId: { notIn: ["org-platform", "org-default"] },
+        },
         _count: { _all: true },
       }),
       prisma.subscriptionPayment.aggregate({
@@ -536,7 +544,20 @@ export async function listPlatformBills(req: Request, res: Response, next: NextF
       prisma.subscriptionBill.findMany({
         where,
         include: {
-          organization: { select: { id: true, name: true } },
+          organization: {
+            select: {
+              id: true,
+              name: true,
+              users: {
+                where: { role: "SUPER_ADMIN" },
+                select: { phone: true, name: true },
+                take: 1,
+              },
+              subscription: {
+                select: { contactPhone: true },
+              },
+            },
+          },
           payment: {
             select: { id: true, status: true, txnReference: true, verifiedAt: true },
           },
@@ -553,6 +574,8 @@ export async function listPlatformBills(req: Request, res: Response, next: NextF
       billNumber: b.billNumber,
       organizationId: b.organizationId,
       organizationName: b.organization.name,
+      ownerPhone: b.organization.users[0]?.phone ?? b.organization.subscription?.contactPhone ?? null,
+      ownerName: b.organization.users[0]?.name ?? null,
       planName: b.planName,
       termMonths: b.termMonths,
       termLabel: b.termLabel,
@@ -574,6 +597,43 @@ export async function listPlatformBills(req: Request, res: Response, next: NextF
     }));
 
     res.json({ data: { bills: result, total }, error: null });
+  } catch (e) {
+    next(e);
+  }
+}
+
+// ─── POST /api/platform/bills/:billId/send-whatsapp ──────────────────────────
+
+const sendBillWhatsAppSchema = z.object({
+  phone: z.string().min(5).max(32).optional(),
+  message: z.string().min(1).max(2000).optional(),
+});
+
+export async function postPlatformBillSendWhatsApp(req: Request, res: Response, next: NextFunction) {
+  try {
+    const billId = String(req.params.billId);
+    const body = sendBillWhatsAppSchema.parse(req.body ?? {});
+    const actor = actorFromReq(req);
+
+    const outcome = await sendSubscriptionBillWhatsAppNotification(billId, {
+      phone: body.phone,
+      customMessage: body.message,
+      actor,
+    });
+
+    if (!outcome.ok && outcome.message === "Bill not found") {
+      res.status(404).json({ data: null, error: { message: "Bill not found" } });
+      return;
+    }
+    if (!outcome.ok && outcome.message === "No phone number available for this organization.") {
+      res.status(400).json({ data: null, error: { message: outcome.message } });
+      return;
+    }
+
+    res.json({
+      data: outcome,
+      error: null,
+    });
   } catch (e) {
     next(e);
   }
@@ -1665,80 +1725,150 @@ export async function deletePlatformOrganization(req: Request, res: Response, ne
     });
     if (!org) throw new AppHttpError(404, "Organization not found.", "NOT_FOUND");
 
-    // Safeguard: Do not delete if the PLATFORM_OWNER account is anchored to this organization
+    // Handle PLATFORM_OWNER account anchored to this organization:
+    // If PLATFORM_OWNER is attached to this org, reassign to another org or a dedicated system org.
     const platformOwner = await prisma.user.findFirst({
       where: { organizationId: orgId, role: "PLATFORM_OWNER" },
     });
     if (platformOwner) {
-      throw new AppHttpError(
-        400,
-        "Cannot delete this organization because the Platform Owner user is attached to it. Please reassign the platform owner first.",
-        "PLATFORM_OWNER_ATTACHED"
-      );
+      // Create or ensure dedicated system organization & branch for PLATFORM_OWNER anchor
+      let systemOrg = await prisma.organization.findUnique({ where: { id: "org-platform" } });
+      if (!systemOrg) {
+        systemOrg = await prisma.organization.create({
+          data: {
+            id: "org-platform",
+            name: "Platform System",
+            slug: "platform-system",
+            isActive: true,
+          },
+        });
+      }
+      let systemBranch = await prisma.branch.findFirst({
+        where: { organizationId: systemOrg.id },
+        orderBy: { id: "asc" },
+      });
+      if (!systemBranch) {
+        systemBranch = await prisma.branch.create({
+          data: {
+            id: "br-platform",
+            name: "Platform HQ",
+            address: "",
+            phone: "+919999999999",
+            isActive: true,
+            organizationId: systemOrg.id,
+          },
+        });
+      }
+      await prisma.user.update({
+        where: { id: platformOwner.id },
+        data: {
+          organizationId: systemOrg.id,
+          branchId: systemBranch.id,
+        },
+      });
     }
 
-    await prisma.$transaction(async (tx) => {
-      // 1. Inspections
-      await tx.inspectionSendLog.deleteMany({ where: { organizationId: orgId } });
-      await tx.inspectionUpload.deleteMany({ where: { organizationId: orgId } });
-      await tx.inspectionReportVersion.deleteMany({
-        where: { report: { organizationId: orgId } },
-      });
-      await tx.inspectionReport.deleteMany({ where: { organizationId: orgId } });
-      await tx.inspectionTemplate.deleteMany({ where: { organizationId: orgId } });
+    await prisma.$transaction(
+      async (tx) => {
+        // 1. Inspections
+        await tx.inspectionSendLog.deleteMany({ where: { organizationId: orgId } });
+        await tx.inspectionUpload.deleteMany({ where: { organizationId: orgId } });
+        await tx.inspectionReportVersion.deleteMany({
+          where: { report: { organizationId: orgId } },
+        });
+        await tx.inspectionReport.deleteMany({ where: { organizationId: orgId } });
+        await tx.inspectionTemplate.deleteMany({ where: { organizationId: orgId } });
 
-      // 2. AppJsonRow
-      await tx.appJsonRow.deleteMany({ where: { organizationId: orgId } });
+        // 2. AppJsonRow (all tenant-scoped JSON rows)
+        await tx.appJsonRow.deleteMany({ where: { organizationId: orgId } });
 
-      // 3. Parties & related child tables
-      const parties = await tx.party.findMany({
-        where: { organizationId: orgId },
-        select: { id: true },
-      });
-      const partyIds = parties.map((p) => p.id);
-      if (partyIds.length > 0) {
-        await tx.partyHidden.deleteMany({ where: { partyId: { in: partyIds } } });
-        await tx.partyCustomField.deleteMany({ where: { partyId: { in: partyIds } } });
-        await tx.partyBankAccount.deleteMany({ where: { partyId: { in: partyIds } } });
-        await tx.partyShippingAddress.deleteMany({ where: { partyId: { in: partyIds } } });
+        // 3. Parties & related child tables
+        const parties = await tx.party.findMany({
+          where: { organizationId: orgId },
+          select: { id: true },
+        });
+        const partyIds = parties.map((p) => p.id);
+        if (partyIds.length > 0) {
+          await tx.partyHidden.deleteMany({ where: { partyId: { in: partyIds } } });
+          await tx.partyCustomField.deleteMany({ where: { partyId: { in: partyIds } } });
+          await tx.partyBankAccount.deleteMany({ where: { partyId: { in: partyIds } } });
+          await tx.partyShippingAddress.deleteMany({ where: { partyId: { in: partyIds } } });
+        }
         await tx.party.deleteMany({ where: { organizationId: orgId } });
+
+        // 4. Vehicles & Customers
+        const customers = await tx.customer.findMany({
+          where: { organizationId: orgId },
+          select: { id: true },
+        });
+        const customerIds = customers.map((c) => c.id);
+        if (customerIds.length > 0) {
+          await tx.vehicle.deleteMany({
+            where: {
+              OR: [
+                { organizationId: orgId },
+                { customerId: { in: customerIds } },
+              ],
+            },
+          });
+        } else {
+          await tx.vehicle.deleteMany({ where: { organizationId: orgId } });
+        }
+        await tx.customer.deleteMany({ where: { organizationId: orgId } });
+
+        // 5. Appointments
+        await tx.appointment.deleteMany({ where: { organizationId: orgId } });
+
+        // 6. Attendance & Users
+        const branches = await tx.branch.findMany({
+          where: { organizationId: orgId },
+          select: { id: true },
+        });
+        const branchIds = branches.map((b) => b.id);
+
+        const users = await tx.user.findMany({
+          where: { organizationId: orgId, role: { not: "PLATFORM_OWNER" } },
+          select: { id: true },
+        });
+        const userIds = users.map((u) => u.id);
+
+        // Delete all attendance records tied to either org branches OR org users
+        await tx.attendance.deleteMany({
+          where: {
+            OR: [
+              ...(branchIds.length > 0 ? [{ branchId: { in: branchIds } }] : []),
+              ...(userIds.length > 0 ? [{ staffId: { in: userIds } }] : []),
+            ],
+          },
+        });
+
+        // Delete all users belonging to this organization (excluding PLATFORM_OWNER)
+        await tx.user.deleteMany({
+          where: { organizationId: orgId, role: { not: "PLATFORM_OWNER" } },
+        });
+
+        // 7. Branches
+        await tx.branch.deleteMany({ where: { organizationId: orgId } });
+
+        // 8. Subscriptions, Payments, Bills, Referrals, Audit
+        await tx.subscriptionBill.deleteMany({ where: { organizationId: orgId } });
+        await tx.subscriptionPayment.deleteMany({ where: { organizationId: orgId } });
+        await tx.organizationSubscription.deleteMany({ where: { organizationId: orgId } });
+        await tx.referralTransaction.deleteMany({
+          where: { wallet: { organizationId: orgId } },
+        });
+        await tx.referralWallet.deleteMany({ where: { organizationId: orgId } });
+        await tx.platformReferralCode.deleteMany({ where: { organizationId: orgId } });
+        await tx.platformAuditLog.deleteMany({ where: { organizationId: orgId } });
+
+        // 9. Finally, the Organization
+        await tx.organization.delete({ where: { id: orgId } });
+      },
+      {
+        maxWait: 15000,
+        timeout: 60000,
       }
-
-      // 4. Vehicles & Customers
-      await tx.vehicle.deleteMany({ where: { organizationId: orgId } });
-      await tx.customer.deleteMany({ where: { organizationId: orgId } });
-
-      // 5. Appointments
-      await tx.appointment.deleteMany({ where: { organizationId: orgId } });
-
-      // 6. Attendance & Users
-      const branches = await tx.branch.findMany({
-        where: { organizationId: orgId },
-        select: { id: true },
-      });
-      const branchIds = branches.map((b) => b.id);
-      if (branchIds.length > 0) {
-        await tx.attendance.deleteMany({ where: { branchId: { in: branchIds } } });
-      }
-      await tx.user.deleteMany({ where: { organizationId: orgId } });
-
-      // 7. Branches
-      await tx.branch.deleteMany({ where: { organizationId: orgId } });
-
-      // 8. Subscriptions, Payments, Bills, Referrals
-      await tx.subscriptionBill.deleteMany({ where: { organizationId: orgId } });
-      await tx.subscriptionPayment.deleteMany({ where: { organizationId: orgId } });
-      await tx.organizationSubscription.deleteMany({ where: { organizationId: orgId } });
-      await tx.referralTransaction.deleteMany({
-        where: { wallet: { organizationId: orgId } },
-      });
-      await tx.referralWallet.deleteMany({ where: { organizationId: orgId } });
-      await tx.platformReferralCode.deleteMany({ where: { organizationId: orgId } });
-      await tx.platformAuditLog.deleteMany({ where: { organizationId: orgId } });
-
-      // 9. Finally, the Organization
-      await tx.organization.delete({ where: { id: orgId } });
-    });
+    );
 
     await writePlatformAuditLog({
       organizationId: null,

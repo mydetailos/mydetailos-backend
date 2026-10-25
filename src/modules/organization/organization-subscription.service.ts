@@ -68,6 +68,7 @@ import {
 } from "../../lib/owner-trial-whatsapp.js";
 import { notifyOwnerPlanActivated } from "./owner-trial-notify.service.js";
 import { ensureOrgShareReferralCode } from "./org-share-referral.service.js";
+import { sendSubscriptionBillWhatsAppNotification } from "./subscription-bill-notify.service.js";
 
 export const DEFAULT_ORG_ID = "org-default";
 
@@ -515,15 +516,16 @@ export async function listOrganizationsForPlatform(
   opts?: ListOrganizationsForPlatformOpts
 ) {
   const orgs = await prisma.organization.findMany({
+    where: {
+      id: { notIn: ["org-platform", "org-default"] },
+      ...(opts?.subscriptionStatus
+        ? {
+            subscription: { status: opts.subscriptionStatus },
+          }
+        : {}),
+    },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     include: { subscription: true },
-    ...(opts?.subscriptionStatus
-      ? {
-          where: {
-            subscription: { status: opts.subscriptionStatus },
-          },
-        }
-      : {}),
   });
   const withSub = orgs.filter((o) => o.subscription);
   const extrasMap = await loadPlatformOrgExtrasMap(withSub.map((o) => o.id));
@@ -1832,114 +1834,117 @@ async function settleAddOnPayment(
       ? null
       : pricing.finalAllowedUsers ?? sub.maxUsersOverride;
 
+  let addOnBillId: string | null = null;
   await prisma.$transaction(async (tx) => {
     await tx.subscriptionPayment.update({
-      where: { id: payment.id },
-      data: {
-        status: "PAID",
-        txnReference: txnRef,
-        notes: input.notes ?? payment.notes,
-        amount: input.amount ?? payment.amount,
-        verifiedAt: now,
-        recordedBy: actorLabel,
-      },
-    });
-
-    await tx.organizationSubscription.update({
-      where: { organizationId: orgId },
-      data: {
-        paymentStatus: "PAID",
-        lastPaymentTxnId: txnRef,
-        status: "ACTIVE",
-        maxBranchesOverride: nextBranchOverride,
-        maxUsersOverride: nextUsersOverride,
-        // Keep existing startsAt / expiresAt / termMonths / plan.
-      },
-    });
-
-    await tx.organization.update({
-      where: { id: orgId },
-      data: { isActive: true },
-    });
-
-    await tx.subscriptionBill.create({
-      data: {
-        organizationId: orgId,
-        subscriptionId: sub.id,
-        paymentId: payment.id,
-        billNumber,
-        planName: sub.planName,
-        termMonths: sub.termMonths,
-        termLabel: "Add-on",
-        periodStart,
-        periodEnd,
-        baseAmount: 0,
-        extraBranchCost: pricing.extraBranchCost,
-        extraUserCost: pricing.extraUserCost,
-        extraBranches: pricing.extraBranches,
-        extraUsers: pricing.extraUsers,
-        onboardingFee: 0,
-        referralDiscount: 0,
-        gstPercent: pricing.gstPercent,
-        gstAmount: pricing.gstAmount,
-        totalAmount: finalAmount,
-        amount: finalAmount,
-        currency: payment.currency,
-      },
-    });
-
-    await tx.platformAuditLog.create({
-      data: {
-        organizationId: orgId,
-        actor: actorLabel,
-        action: "subscription.addon_verified",
-        before: {
-          maxBranchesOverride: sub.maxBranchesOverride,
-          maxUsersOverride: sub.maxUsersOverride,
-          paymentStatus: sub.paymentStatus,
-          expiresAt: currentEnd?.toISOString() ?? null,
+        where: { id: payment.id },
+        data: {
+          status: "PAID",
+          txnReference: txnRef,
+          notes: input.notes ?? payment.notes,
+          amount: input.amount ?? payment.amount,
+          verifiedAt: now,
+          recordedBy: actorLabel,
         },
-        after: {
+      });
+
+      await tx.organizationSubscription.update({
+        where: { organizationId: orgId },
+        data: {
+          paymentStatus: "PAID",
+          lastPaymentTxnId: txnRef,
+          status: "ACTIVE",
           maxBranchesOverride: nextBranchOverride,
           maxUsersOverride: nextUsersOverride,
-          paymentStatus: "PAID",
+          // Keep existing startsAt / expiresAt / termMonths / plan.
+        },
+      });
+
+      await tx.organization.update({
+        where: { id: orgId },
+        data: { isActive: true },
+      });
+
+      const bill = await tx.subscriptionBill.create({
+        data: {
+          organizationId: orgId,
+          subscriptionId: sub.id,
+          paymentId: payment.id,
           billNumber,
-          txnReference: txnRef,
-          finalAmount,
+          planName: sub.planName,
+          termMonths: sub.termMonths,
+          termLabel: "Add-on",
+          periodStart,
+          periodEnd,
+          baseAmount: 0,
+          extraBranchCost: pricing.extraBranchCost,
+          extraUserCost: pricing.extraUserCost,
           extraBranches: pricing.extraBranches,
           extraUsers: pricing.extraUsers,
-          expiresAt: currentEnd?.toISOString() ?? null,
+          onboardingFee: 0,
+          referralDiscount: 0,
+          gstPercent: pricing.gstPercent,
+          gstAmount: pricing.gstAmount,
+          totalAmount: finalAmount,
+          amount: finalAmount,
+          currency: payment.currency,
         },
-      },
-    });
-  });
+      });
+      addOnBillId = bill.id;
 
-  const usage = await usageForOrg(orgId);
-  const [updatedOrg, updated] = await Promise.all([
-    prisma.organization.findUniqueOrThrow({ where: { id: orgId } }),
-    prisma.organizationSubscription.findUniqueOrThrow({
-      where: { organizationId: orgId },
-    }),
-  ]);
-  if (shouldNotifyOwner) {
-    void notifyOwnerPlanActivated({
-      organizationId: orgId,
-      organizationName: org.name,
-      planName: sub.planName,
-      termLabel: "Add-on",
-      amount: finalAmount,
-      expiresAt: periodEnd,
-      kind: "addon",
-      extraBranches: pricing.extraBranches,
-      extraUsers: pricing.extraUsers,
-      billNumber,
-    }).catch((err) => {
-      console.warn(
-        "[addon-activated-notify]",
-        err instanceof Error ? err.message : err
-      );
+      await tx.platformAuditLog.create({
+        data: {
+          organizationId: orgId,
+          actor: actorLabel,
+          action: "subscription.addon_verified",
+          before: {
+            maxBranchesOverride: sub.maxBranchesOverride,
+            maxUsersOverride: sub.maxUsersOverride,
+            paymentStatus: sub.paymentStatus,
+            expiresAt: currentEnd?.toISOString() ?? null,
+          },
+          after: {
+            maxBranchesOverride: nextBranchOverride,
+            maxUsersOverride: nextUsersOverride,
+            paymentStatus: "PAID",
+            billNumber,
+            txnReference: txnRef,
+            finalAmount,
+            extraBranches: pricing.extraBranches,
+            extraUsers: pricing.extraUsers,
+            expiresAt: currentEnd?.toISOString() ?? null,
+          },
+        },
+      });
     });
-  }
+
+    const usage = await usageForOrg(orgId);
+    const [updatedOrg, updated] = await Promise.all([
+      prisma.organization.findUniqueOrThrow({ where: { id: orgId } }),
+      prisma.organizationSubscription.findUniqueOrThrow({
+        where: { organizationId: orgId },
+      }),
+    ]);
+    if (shouldNotifyOwner) {
+      void notifyOwnerPlanActivated({
+        organizationId: orgId,
+        organizationName: org.name,
+        planName: sub.planName,
+        termLabel: "Add-on",
+        amount: finalAmount,
+        expiresAt: periodEnd,
+        kind: "addon",
+        extraBranches: pricing.extraBranches,
+        extraUsers: pricing.extraUsers,
+        billNumber,
+        billId: addOnBillId,
+      }).catch((err) => {
+        console.warn(
+          "[addon-activated-notify]",
+          err instanceof Error ? err.message : err
+        );
+      });
+    }
   const refereeWallet = await prisma.referralWallet.findUnique({
     where: { organizationId: orgId },
     select: { points: true },
@@ -2083,6 +2088,7 @@ export async function verifySubscriptionPayment(
   const shouldNotifyOwner = payment.status !== "PAID";
   const notifyKind: "upgrade" | "renewal" = sub.status === "TRIAL" ? "upgrade" : "renewal";
 
+  let verifiedBillId: string | null = null;
   await prisma.$transaction(async (tx) => {
     await tx.subscriptionPayment.update({
       where: { id: payment.id },
@@ -2120,7 +2126,7 @@ export async function verifySubscriptionPayment(
       data: { isActive: true },
     });
 
-    await tx.subscriptionBill.create({
+    const bill = await tx.subscriptionBill.create({
       data: {
         organizationId: orgId,
         subscriptionId: sub.id,
@@ -2145,6 +2151,7 @@ export async function verifySubscriptionPayment(
         currency: payment.currency,
       },
     });
+    verifiedBillId = bill.id;
 
     await tx.platformAuditLog.create({
       data: {
@@ -2207,6 +2214,8 @@ export async function verifySubscriptionPayment(
       amount: finalAmount,
       expiresAt: periodEnd,
       kind: notifyKind,
+      billNumber,
+      billId: verifiedBillId,
     }).catch((err) => {
       console.warn(
         "[plan-activated-notify]",

@@ -14,8 +14,22 @@ export async function authenticateUser(
   email: string,
   password: string
 ): Promise<{ user: User; branch: Branch | null } | null> {
-  const user = await prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
+  const user = await prisma.user.findUnique({
+    where: { email: email.trim().toLowerCase() },
+    include: {
+      organization: {
+        select: { id: true, isActive: true },
+      },
+    },
+  });
   if (!user?.isActive) return null;
+
+  // Non-platform owners must belong to an existing, active organization
+  if (user.role !== "PLATFORM_OWNER") {
+    if (!user.organization || !user.organization.isActive) {
+      return null;
+    }
+  }
 
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return null;

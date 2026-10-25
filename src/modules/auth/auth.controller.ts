@@ -173,6 +173,11 @@ async function authSuccessResponse(user: User, branch: Branch | null) {
   if (user.organizationId) {
     organization = await ensureOrganizationHasSlug(user.organizationId);
   }
+  if (user.role !== "PLATFORM_OWNER") {
+    if (!user.organizationId || !organization) {
+      throw new AppHttpError(403, "This organization has been deleted or deactivated.", "ORG_INACTIVE");
+    }
+  }
   return {
     accessToken: token,
     user: {
@@ -499,6 +504,34 @@ export async function verifyLoginOtp(req: Request, res: Response, next: NextFunc
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
     const body = loginSchema.parse(req.body);
+
+    const userCandidate = await prisma.user.findUnique({
+      where: { email: body.email.trim().toLowerCase() },
+      include: { organization: { select: { id: true, isActive: true } } },
+    });
+    if (userCandidate && userCandidate.role !== "PLATFORM_OWNER") {
+      if (!userCandidate.organization) {
+        res.status(403).json({
+          data: null,
+          error: {
+            message: "This organization has been deleted.",
+            code: "ORG_DELETED",
+          },
+        });
+        return;
+      }
+      if (!userCandidate.organization.isActive) {
+        res.status(403).json({
+          data: null,
+          error: {
+            message: "This organization account is deactivated. Contact support.",
+            code: "ORG_SUSPENDED",
+          },
+        });
+        return;
+      }
+    }
+
     const result = await authenticateUser(body.email, body.password);
     if (!result) {
       res.status(401).json({ data: null, error: { message: "Invalid email or password" } });

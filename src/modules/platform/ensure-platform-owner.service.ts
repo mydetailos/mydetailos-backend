@@ -53,19 +53,37 @@ async function ensurePlatformOwnerOnce(opts?: {
     throw new Error("PLATFORM_OWNER_PASSWORD must be at least 8 characters");
   }
 
-  const org =
-    (await prisma.organization.findUnique({ where: { id: "org-default" } })) ??
-    (await prisma.organization.findFirst({ orderBy: { createdAt: "asc" } }));
-  const branch =
-    (await prisma.branch.findFirst({
-      where: org ? { organizationId: org.id } : undefined,
-      orderBy: { id: "asc" },
-    })) ?? (await prisma.branch.findFirst({ orderBy: { id: "asc" } }));
+  let org =
+    (await prisma.organization.findUnique({ where: { id: "org-platform" } })) ??
+    (await prisma.organization.findUnique({ where: { id: "org-default" } }));
 
-  if (!org || !branch) {
-    throw new Error(
-      "Organization or Branch missing. Apply SaaS schema before ensuring platform owner."
-    );
+  if (!org) {
+    org = await prisma.organization.create({
+      data: {
+        id: "org-platform",
+        name: "Platform System",
+        slug: "platform-system",
+        isActive: true,
+      },
+    });
+  }
+
+  let branch = await prisma.branch.findFirst({
+    where: { organizationId: org.id },
+    orderBy: { id: "asc" },
+  });
+
+  if (!branch) {
+    branch = await prisma.branch.create({
+      data: {
+        id: "br-platform",
+        name: "Platform HQ",
+        address: "",
+        phone: "+919999999999",
+        isActive: true,
+        organizationId: org.id,
+      },
+    });
   }
 
   const passwordHash = await bcrypt.hash(password, 10);

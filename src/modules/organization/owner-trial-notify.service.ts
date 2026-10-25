@@ -17,6 +17,7 @@ import {
   buildOwnerSubscriptionExpiringReminderWhatsAppMessage,
 } from "../../lib/owner-trial-whatsapp.js";
 import { isResendConfigured, sendViaResend } from "../../services/resend-send.js";
+import { buildSubscriptionInvoiceUrl } from "./subscription-bill-notify.service.js";
 import {
   isTwilioSmsEnabled,
   isTwilioWhatsAppEnabled,
@@ -242,6 +243,8 @@ export async function notifyOwnerPlanActivated(opts: {
   extraBranches?: number;
   extraUsers?: number;
   billNumber?: string | null;
+  billId?: string | null;
+  invoiceUrl?: string | null;
 }): Promise<OwnerTrialNotifyResult | null> {
   const owner = await findOrgOwner(opts.organizationId);
   if (!owner?.email && !owner?.phone) return null;
@@ -253,6 +256,49 @@ export async function notifyOwnerPlanActivated(opts: {
       : opts.expiresAt
         ? String(opts.expiresAt).slice(0, 10)
         : null;
+
+  let invoiceUrl = opts.invoiceUrl;
+  if (!invoiceUrl && opts.billId) {
+    try {
+      const bill = await prisma.subscriptionBill.findUnique({
+        where: { id: opts.billId },
+        include: { payment: { select: { status: true, txnReference: true } } },
+      });
+      if (bill) {
+        invoiceUrl = buildSubscriptionInvoiceUrl(
+          {
+            ...bill,
+            paymentStatus: bill.payment?.status || "PAID",
+            txnReference: bill.payment?.txnReference || null,
+          },
+          opts.organizationName
+        );
+      }
+    } catch {
+      /* ignore lookup failure */
+    }
+  } else if (!invoiceUrl && opts.billNumber) {
+    try {
+      const bill = await prisma.subscriptionBill.findFirst({
+        where: { organizationId: opts.organizationId, billNumber: opts.billNumber },
+        include: { payment: { select: { status: true, txnReference: true } } },
+        orderBy: { createdAt: "desc" },
+      });
+      if (bill) {
+        invoiceUrl = buildSubscriptionInvoiceUrl(
+          {
+            ...bill,
+            paymentStatus: bill.payment?.status || "PAID",
+            txnReference: bill.payment?.txnReference || null,
+          },
+          opts.organizationName
+        );
+      }
+    } catch {
+      /* ignore lookup failure */
+    }
+  }
+
   const waBody = buildOwnerPlanActivatedWhatsAppMessage({
     ownerName: owner?.name || "there",
     organizationName: opts.organizationName,
@@ -265,12 +311,13 @@ export async function notifyOwnerPlanActivated(opts: {
     extraBranches: opts.extraBranches,
     extraUsers: opts.extraUsers,
     billNumber: opts.billNumber,
+    invoiceUrl,
   });
   const smsBody = buildOwnerPlanActivatedSmsMessage({
     ownerName: owner?.name || "there",
     planName: opts.planName,
     amount: opts.amount,
-    loginUrl: login,
+    loginUrl: invoiceUrl || login,
     kind: opts.kind,
     extraBranches: opts.extraBranches,
     extraUsers: opts.extraUsers,
@@ -297,6 +344,7 @@ export async function notifyOwnerPlanActivated(opts: {
         loginUrl: login,
         expiresAt: expiresLabel,
         billNumber: opts.billNumber,
+        invoiceUrl,
       }),
       waBody
     ),

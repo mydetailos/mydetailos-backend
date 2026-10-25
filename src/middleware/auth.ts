@@ -54,7 +54,9 @@ async function assertOrganizationAccess(
   if (path === "/api/auth/logout" || path.endsWith("/auth/logout")) return { ok: true };
 
   const orgId = auth.organizationId?.trim();
-  if (!orgId) return { ok: true };
+  if (!orgId) {
+    return { ok: false, message: "Organization not found on session." };
+  }
 
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
