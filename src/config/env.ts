@@ -70,6 +70,7 @@ const schema = z.object({
   TWILIO_PAYMENT_PENDING_TEMPLATE_SID: z.string().optional(),
   TWILIO_OWNER_PLAN_ACTIVATED_TEMPLATE_SID: z.string().optional(),
   TWILIO_OWNER_PLAN_ACTIVATED_BILL_TEMPLATE_SID: z.string().optional(),
+  TWILIO_OWNER_PLAN_ACTIVATED_CTA_TEMPLATE_SID: z.string().optional(),
   TWILIO_OWNER_PAYMENT_LINK_TEMPLATE_SID: z.string().optional(),
   /** Approved CTA template owner_trial_started_login ({{1}}=name, {{2}}=days, button=Login). */
   TWILIO_OWNER_TRIAL_STARTED_TEMPLATE_SID: z.string().optional(),

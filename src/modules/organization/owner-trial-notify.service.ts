@@ -6,6 +6,7 @@ import {
   buildOwnerTrialStartedSmsMessage,
   buildOwnerTrialStartedWhatsAppMessage,
   ownerPlanActivatedTemplateVariables,
+  ownerPlanActivatedCtaTemplateVariables,
   ownerTrialStartedTemplateVariables,
   ownerTrialExpiredTemplateVariables,
   buildOwnerTrialExpiredWhatsAppMessage,
@@ -274,6 +275,7 @@ export async function notifyOwnerPlanActivated(opts: {
         ? String(opts.expiresAt).slice(0, 10)
         : null;
 
+  let resolvedBillId = opts.billId ?? null;
   let invoiceUrl = opts.invoiceUrl;
   if (!invoiceUrl && opts.billId) {
     try {
@@ -282,6 +284,7 @@ export async function notifyOwnerPlanActivated(opts: {
         include: { payment: { select: { status: true, txnReference: true } } },
       });
       if (bill) {
+        resolvedBillId = bill.id;
         invoiceUrl = buildSubscriptionInvoiceUrl(
           {
             ...bill,
@@ -302,6 +305,7 @@ export async function notifyOwnerPlanActivated(opts: {
         orderBy: { createdAt: "desc" },
       });
       if (bill) {
+        resolvedBillId = bill.id;
         invoiceUrl = buildSubscriptionInvoiceUrl(
           {
             ...bill,
@@ -358,15 +362,29 @@ export async function notifyOwnerPlanActivated(opts: {
     invoiceUrl,
   });
 
-  const preferredSid =
+  const ctaTemplateVars = ownerPlanActivatedCtaTemplateVariables({
+    ownerName: owner?.name || "there",
+    organizationName: opts.organizationName,
+    planName: opts.planName,
+    termLabel: opts.termLabel,
+    amount: opts.amount,
+    loginUrl: login,
+    expiresAt: expiresLabel,
+    billNumber: opts.billNumber,
+    billId: resolvedBillId || opts.billId,
+  });
+
+  const preferredCtaSid =
+    env.TWILIO_OWNER_PLAN_ACTIVATED_CTA_TEMPLATE_SID ||
+    "HXfbf3b4948abc69e59bf39ec8f4c78f79";
+  const fallbackTextSid =
     env.TWILIO_OWNER_PLAN_ACTIVATED_BILL_TEMPLATE_SID ||
     "HX519e8ed8ae401b9607430c373c2e9c43";
-  const fallbackSid = env.TWILIO_OWNER_PLAN_ACTIVATED_TEMPLATE_SID;
 
-  const waPayload = whatsappTemplateOrBody(preferredSid, templateVars, waBody);
+  const waPayload = whatsappTemplateOrBody(preferredCtaSid, ctaTemplateVars, waBody);
   const waFallbackPayload =
-    fallbackSid && fallbackSid !== preferredSid
-      ? whatsappTemplateOrBody(fallbackSid, templateVars, waBody)
+    fallbackTextSid && fallbackTextSid !== preferredCtaSid
+      ? whatsappTemplateOrBody(fallbackTextSid, templateVars, waBody)
       : undefined;
 
   return sendOwnerChannels({

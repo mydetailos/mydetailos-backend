@@ -131,6 +131,31 @@ export function ownerPlanActivatedTemplateVariables(opts: {
   };
 }
 
+/** Variables for Twilio CTA template `owner_plan_activated_btn_v1` where button URL is https://www.mydetailos.com/subscription-invoice/{{8}} */
+export function ownerPlanActivatedCtaTemplateVariables(opts: {
+  ownerName: string;
+  organizationName: string;
+  planName: string;
+  termLabel: string;
+  amount: number;
+  loginUrl: string;
+  expiresAt?: string | null;
+  billNumber?: string | null;
+  billId?: string | null;
+}): Record<string, string> {
+  const suffix = opts.billId?.trim() || opts.billNumber?.trim() || "";
+  return {
+    "1": firstNameFrom(opts.ownerName),
+    "2": opts.organizationName,
+    "3": opts.planName,
+    "4": opts.termLabel,
+    "5": `₹${opts.amount.toFixed(2)}`,
+    "6": opts.billNumber?.trim() || "N/A",
+    "7": opts.expiresAt?.trim() || "see app",
+    "8": suffix,
+  };
+}
+
 /** Variables for Twilio template `owner_trial_started_login`. Button URL is fixed to the login page. */
 export function ownerTrialStartedTemplateVariables(opts: {
   ownerName: string;

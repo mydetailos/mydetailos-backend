@@ -7,6 +7,7 @@ import {
 import {
   buildOwnerPlanActivatedWhatsAppMessage,
   ownerPlanActivatedTemplateVariables,
+  ownerPlanActivatedCtaTemplateVariables,
 } from "../src/lib/owner-trial-whatsapp.js";
 
 test("Subscription Bill WhatsApp Notification & Zero-Auth Invoice URL", async (t) => {
@@ -137,4 +138,28 @@ test("Subscription Bill WhatsApp Notification & Zero-Auth Invoice URL", async (t
     assert.equal(vars["7"], "2028-11-08");
     assert.equal(vars["8"], "https://app.mydetailos.com/subscription-invoice/SUB-2026-0002#data=test1234");
   });
+
+  await t.test("ownerPlanActivatedCtaTemplateVariables maps variable 8 to billId for CTA URL button", () => {
+    const vars = ownerPlanActivatedCtaTemplateVariables({
+      ownerName: "amar",
+      organizationName: "TEST",
+      planName: "Starter",
+      termLabel: "1 year",
+      amount: 0,
+      loginUrl: "https://mydetailos.com/login",
+      expiresAt: "2028-11-08",
+      billNumber: "SUB-2026-0002",
+      billId: "cmvntu94k0003hf2aytd75y9n",
+    });
+
+    assert.equal(vars["1"], "amar");
+    assert.equal(vars["2"], "TEST");
+    assert.equal(vars["3"], "Starter");
+    assert.equal(vars["4"], "1 year");
+    assert.equal(vars["5"], "₹0.00");
+    assert.equal(vars["6"], "SUB-2026-0002");
+    assert.equal(vars["7"], "2028-11-08");
+    assert.equal(vars["8"], "cmvntu94k0003hf2aytd75y9n");
+  });
 });
+
