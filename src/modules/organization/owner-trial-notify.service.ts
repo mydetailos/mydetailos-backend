@@ -157,6 +157,7 @@ async function sendOwnerChannels(opts: {
   phone: string;
   waBody: string;
   waPayload?: string | WhatsAppTemplateSend;
+  waFallbackPayload?: string | WhatsAppTemplateSend;
   smsBody: string;
   emailSubject: string;
   logTag: string;
@@ -198,12 +199,28 @@ async function sendOwnerChannels(opts: {
 
   if (opts.phone && isTwilioWhatsAppEnabled()) {
     try {
-      const result = await sendWhatsAppMessage(opts.phone, opts.waPayload ?? opts.waBody);
-      const fail = waFailed(result);
+      let result = await sendWhatsAppMessage(opts.phone, opts.waPayload ?? opts.waBody);
+      let fail = waFailed(result);
+      if (fail && opts.waFallbackPayload) {
+        console.warn(`[${opts.logTag}] Primary WhatsApp template failed (${fail}), trying fallback template`);
+        result = await sendWhatsAppMessage(opts.phone, opts.waFallbackPayload);
+        fail = waFailed(result);
+      }
       if (fail) sent.errors.whatsapp = fail;
       else sent.whatsapp = true;
     } catch (err) {
-      sent.errors.whatsapp = err instanceof Error ? err.message : "WhatsApp send failed";
+      if (opts.waFallbackPayload) {
+        try {
+          const fallbackRes = await sendWhatsAppMessage(opts.phone, opts.waFallbackPayload);
+          const fail = waFailed(fallbackRes);
+          if (fail) sent.errors.whatsapp = fail;
+          else sent.whatsapp = true;
+        } catch (fErr) {
+          sent.errors.whatsapp = fErr instanceof Error ? fErr.message : "WhatsApp send failed";
+        }
+      } else {
+        sent.errors.whatsapp = err instanceof Error ? err.message : "WhatsApp send failed";
+      }
     }
   } else if (!isTwilioWhatsAppEnabled()) {
     sent.errors.whatsapp = "Twilio WhatsApp is not configured";
@@ -329,25 +346,35 @@ export async function notifyOwnerPlanActivated(opts: {
         ? `Your MY DETAIL OS extra branches / users are active`
         : `Your MY DETAIL OS subscription was renewed`;
 
+  const templateVars = ownerPlanActivatedTemplateVariables({
+    ownerName: owner?.name || "there",
+    organizationName: opts.organizationName,
+    planName: opts.planName,
+    termLabel: opts.termLabel,
+    amount: opts.amount,
+    loginUrl: login,
+    expiresAt: expiresLabel,
+    billNumber: opts.billNumber,
+    invoiceUrl,
+  });
+
+  const preferredSid =
+    env.TWILIO_OWNER_PLAN_ACTIVATED_BILL_TEMPLATE_SID ||
+    "HX519e8ed8ae401b9607430c373c2e9c43";
+  const fallbackSid = env.TWILIO_OWNER_PLAN_ACTIVATED_TEMPLATE_SID;
+
+  const waPayload = whatsappTemplateOrBody(preferredSid, templateVars, waBody);
+  const waFallbackPayload =
+    fallbackSid && fallbackSid !== preferredSid
+      ? whatsappTemplateOrBody(fallbackSid, templateVars, waBody)
+      : undefined;
+
   return sendOwnerChannels({
     email: owner?.email || "",
     phone: owner?.phone || "",
     waBody,
-    waPayload: whatsappTemplateOrBody(
-      env.TWILIO_OWNER_PLAN_ACTIVATED_TEMPLATE_SID,
-      ownerPlanActivatedTemplateVariables({
-        ownerName: owner?.name || "there",
-        organizationName: opts.organizationName,
-        planName: opts.planName,
-        termLabel: opts.termLabel,
-        amount: opts.amount,
-        loginUrl: login,
-        expiresAt: expiresLabel,
-        billNumber: opts.billNumber,
-        invoiceUrl,
-      }),
-      waBody
-    ),
+    waPayload,
+    waFallbackPayload,
     smsBody,
     emailSubject: subject,
     logTag: "plan-activated-notify",
