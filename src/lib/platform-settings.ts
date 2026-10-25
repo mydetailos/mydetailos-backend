@@ -52,6 +52,8 @@ export type PlatformSettingsPayload = {
   planOverrides?: Partial<Record<string, PlanOverride>>;
   /** Persisted subscription pricing (overrides env when set). */
   subscriptionPricing?: SubscriptionPricingPatch;
+  /** Platform tax invoice settings (business entity, brand name, GST, bank details, template text). */
+  invoiceSettings?: Record<string, unknown>;
 };
 
 function asRecord(raw: unknown): Record<string, unknown> {
@@ -222,6 +224,10 @@ export function parsePlatformSettingsPayload(raw: unknown): PlatformSettingsPayl
     planCatalog,
     planOverrides: Object.keys(planOverrides).length ? planOverrides : undefined,
     subscriptionPricing,
+    invoiceSettings:
+      obj.invoiceSettings && typeof obj.invoiceSettings === "object" && !Array.isArray(obj.invoiceSettings)
+        ? (obj.invoiceSettings as Record<string, unknown>)
+        : undefined,
   };
 }
 
@@ -281,6 +287,7 @@ export type ResolvedPlatformSettings = {
   planOverrides: Partial<Record<string, PlanOverride>>;
   subscriptionPricing: SubscriptionPricingConfig;
   subscriptionPricingPatch: SubscriptionPricingPatch | null;
+  invoiceSettings: Record<string, unknown> | null;
   updatedAt: string | null;
   updatedBy: string | null;
 };
@@ -338,6 +345,7 @@ export function resolvePlatformSettings(
     planOverrides: catalogToOverrides(planCatalog),
     subscriptionPricing,
     subscriptionPricingPatch: payload.subscriptionPricing ?? null,
+    invoiceSettings: payload.invoiceSettings ?? null,
     updatedAt: meta?.updatedAt?.toISOString() ?? null,
     updatedBy: meta?.updatedBy ?? null,
   };

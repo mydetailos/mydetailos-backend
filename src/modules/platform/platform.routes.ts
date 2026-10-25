@@ -30,6 +30,7 @@ import {
   deletePlatformPlanHandler,
   getPlatformSettingsHandler,
   putPlatformSettingsHandler,
+  postPlatformInvoiceLogo,
   getPlatformMessagingStatus,
   postPlatformMessagingTest,
   suspendOrganization,
@@ -39,6 +40,7 @@ import {
   postPlatformConvertTrial,
   listPlatformContacts,
 } from "./platform.controller.js";
+import { logoUploadHandler } from "../../middleware/logo-upload.js";
 import {
   listPlatformBanners,
   createPlatformBanner,
@@ -111,6 +113,7 @@ platformRouter.delete("/plans/:code", deletePlatformPlanHandler);
 
 platformRouter.get("/settings", getPlatformSettingsHandler);
 platformRouter.put("/settings", putPlatformSettingsHandler);
+platformRouter.post("/settings/invoice-logo", logoUploadHandler, postPlatformInvoiceLogo);
 
 platformRouter.get("/messaging", getPlatformMessagingStatus);
 platformRouter.post("/messaging/test", postPlatformMessagingTest);

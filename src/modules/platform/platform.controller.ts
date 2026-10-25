@@ -45,6 +45,7 @@ import {
   sendWhatsAppMessage,
 } from "../../services/twilio-sms.service.js";
 import { isResendConfigured, sendViaResend } from "../../services/resend-send.js";
+import { persistBusinessLogoFile } from "../../services/object-storage.service.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1288,6 +1289,7 @@ export async function getPlatformSettingsHandler(req: Request, res: Response, ne
           defaultContactUsUrl: settings.defaultContactUsUrl,
           defaultContactPhone: settings.defaultContactPhone,
           defaultUpgradeUrl: settings.defaultUpgradeUrl,
+          invoiceSettings: settings.invoiceSettings ?? null,
         },
         meta: {
           updatedAt: settings.updatedAt,
@@ -1313,6 +1315,7 @@ const putSettingsSchema = z.object({
   defaultContactUsUrl: z.string().max(500).nullable().optional(),
   defaultContactPhone: z.string().max(32).nullable().optional(),
   defaultUpgradeUrl: z.string().max(500).nullable().optional(),
+  invoiceSettings: z.record(z.string(), z.unknown()).optional(),
 });
 
 // ─── PUT /api/platform/settings ──────────────────────────────────────────────
@@ -1353,6 +1356,7 @@ export async function putPlatformSettingsHandler(req: Request, res: Response, ne
         defaultContactUsUrl: before.defaultContactUsUrl,
         defaultContactPhone: before.defaultContactPhone,
         defaultUpgradeUrl: before.defaultUpgradeUrl,
+        hasInvoiceSettings: Boolean(before.invoiceSettings),
       },
       after: {
         trialDaysDefault: settings.trialDaysDefault,
@@ -1361,6 +1365,7 @@ export async function putPlatformSettingsHandler(req: Request, res: Response, ne
         defaultContactUsUrl: settings.defaultContactUsUrl,
         defaultContactPhone: settings.defaultContactPhone,
         defaultUpgradeUrl: settings.defaultUpgradeUrl,
+        hasInvoiceSettings: Boolean(settings.invoiceSettings),
       },
     });
 
@@ -1373,6 +1378,7 @@ export async function putPlatformSettingsHandler(req: Request, res: Response, ne
           defaultContactUsUrl: settings.defaultContactUsUrl,
           defaultContactPhone: settings.defaultContactPhone,
           defaultUpgradeUrl: settings.defaultUpgradeUrl,
+          invoiceSettings: settings.invoiceSettings ?? null,
         },
         meta: {
           updatedAt: settings.updatedAt,
@@ -1381,6 +1387,27 @@ export async function putPlatformSettingsHandler(req: Request, res: Response, ne
       },
       error: null,
     });
+  } catch (e) {
+    next(e);
+  }
+}
+
+// ─── POST /api/platform/settings/invoice-logo ────────────────────────────────
+
+export async function postPlatformInvoiceLogo(req: Request, res: Response, next: NextFunction) {
+  try {
+    const file = req.file;
+    if (!file?.buffer) {
+      res.status(400).json({ data: null, error: { message: "No image file provided." } });
+      return;
+    }
+    const actor = actorFromReq(req);
+    const url = await persistBusinessLogoFile({
+      buffer: file.buffer,
+      mimeType: file.mimetype,
+      uploadedBy: actor,
+    });
+    res.json({ data: { url }, error: null });
   } catch (e) {
     next(e);
   }
