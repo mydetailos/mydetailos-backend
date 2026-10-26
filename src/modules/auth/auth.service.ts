@@ -6,20 +6,24 @@ import { env } from "../../config/env.js";
 import type { UserRole } from "@prisma/client";
 
 /**
- * Authenticates a user and returns both user + branch together.
- * Branch lookup runs AFTER bcrypt to reuse the same warm Neon connection.
- * Avoids the cold-start penalty of opening a second simultaneous connection.
+ * Authenticates a user and returns user + branch + organization together.
+ * Fetches user, branch, and organization in a single query to minimize DB round-trips.
  */
 export async function authenticateUser(
   email: string,
   password: string
-): Promise<{ user: User; branch: Branch | null } | null> {
+): Promise<{
+  user: User;
+  branch: Branch | null;
+  organization: { id: string; name: string; slug: string | null; isActive: boolean } | null;
+} | null> {
   const user = await prisma.user.findUnique({
     where: { email: email.trim().toLowerCase() },
     include: {
       organization: {
-        select: { id: true, isActive: true },
+        select: { id: true, name: true, slug: true, isActive: true },
       },
+      branch: true,
     },
   });
   if (!user?.isActive) return null;
@@ -34,15 +38,16 @@ export async function authenticateUser(
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return null;
 
-  // Branch lookup on the same warm connection, after bcrypt completes.
-  const branch = await prisma.branch.findUnique({ where: { id: user.branchId } });
-
   // Fire-and-forget: lastLoginAt is informational; don't block the auth response on it.
   prisma.user
     .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
     .catch(() => {});
 
-  return { user, branch };
+  return {
+    user,
+    branch: user.branch,
+    organization: user.organization,
+  };
 }
 
 /** Record successful OTP (or other non-password) login. */

@@ -158,7 +158,11 @@ function formatTwilioSendError(err: unknown): string {
   return "Could not send SMS. Check Twilio credentials, trial verified numbers, and server logs.";
 }
 
-async function authSuccessResponse(user: User, branch: Branch | null) {
+async function authSuccessResponse(
+  user: User,
+  branch: Branch | null,
+  preloadedOrg?: { id: string; name: string; slug: string | null } | null
+) {
   const token = signAuthToken({
     id: user.id,
     email: user.email,
@@ -170,7 +174,13 @@ async function authSuccessResponse(user: User, branch: Branch | null) {
     permissions: user.permissions,
   });
   let organization: { id: string; name: string; slug: string } | null = null;
-  if (user.organizationId) {
+  if (preloadedOrg && preloadedOrg.slug) {
+    organization = {
+      id: preloadedOrg.id,
+      name: preloadedOrg.name,
+      slug: preloadedOrg.slug.trim().toLowerCase(),
+    };
+  } else if (user.organizationId) {
     organization = await ensureOrganizationHasSlug(user.organizationId);
   }
   if (user.role !== "PLATFORM_OWNER") {
@@ -505,38 +515,39 @@ export async function login(req: Request, res: Response, next: NextFunction) {
   try {
     const body = loginSchema.parse(req.body);
 
-    const userCandidate = await prisma.user.findUnique({
-      where: { email: body.email.trim().toLowerCase() },
-      include: { organization: { select: { id: true, isActive: true } } },
-    });
-    if (userCandidate && userCandidate.role !== "PLATFORM_OWNER") {
-      if (!userCandidate.organization) {
-        res.status(403).json({
-          data: null,
-          error: {
-            message: "This organization has been deleted.",
-            code: "ORG_DELETED",
-          },
-        });
-        return;
-      }
-      if (!userCandidate.organization.isActive) {
-        res.status(403).json({
-          data: null,
-          error: {
-            message: "This organization account is deactivated. Contact support.",
-            code: "ORG_SUSPENDED",
-          },
-        });
-        return;
-      }
-    }
-
     const result = await authenticateUser(body.email, body.password);
     if (!result) {
+      // On failure, check if user exists but org is inactive/deleted to provide the specific error
+      const userCandidate = await prisma.user.findUnique({
+        where: { email: body.email.trim().toLowerCase() },
+        include: { organization: { select: { id: true, isActive: true } } },
+      });
+      if (userCandidate && userCandidate.role !== "PLATFORM_OWNER") {
+        if (!userCandidate.organization) {
+          res.status(403).json({
+            data: null,
+            error: {
+              message: "This organization has been deleted.",
+              code: "ORG_DELETED",
+            },
+          });
+          return;
+        }
+        if (!userCandidate.organization.isActive) {
+          res.status(403).json({
+            data: null,
+            error: {
+              message: "This organization account is deactivated. Contact support.",
+              code: "ORG_SUSPENDED",
+            },
+          });
+          return;
+        }
+      }
       res.status(401).json({ data: null, error: { message: "Invalid email or password" } });
       return;
     }
+
     void logAuthActivity({
       organizationId: result.user.organizationId,
       userId: result.user.id,
@@ -544,8 +555,11 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       action: "LOGIN",
       method: "password",
     });
-    // user + branch are returned together; branch lookup ran in parallel with bcrypt.
-    res.json({ data: await authSuccessResponse(result.user, result.branch), error: null });
+
+    res.json({
+      data: await authSuccessResponse(result.user, result.branch, result.organization),
+      error: null,
+    });
   } catch (e) {
     next(e);
   }
@@ -803,13 +817,15 @@ export async function me(req: Request, res: Response) {
     res.status(401).json({ data: null, error: { message: "Unauthorized" } });
     return;
   }
-  // branchId is in the JWT — look up user first, then branch using the same warm connection.
-  const user = await prisma.user.findUnique({ where: { id: req.auth.id } });
+  const user = await prisma.user.findUnique({
+    where: { id: req.auth.id },
+    include: { branch: true },
+  });
   if (!user?.isActive) {
     res.status(401).json({ data: null, error: { message: "Unauthorized" } });
     return;
   }
-  const branch = await prisma.branch.findUnique({ where: { id: user.branchId } });
+  const branch = user.branch;
   res.json({
     data: {
       user: {
