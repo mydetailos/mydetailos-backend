@@ -43,6 +43,7 @@ async function sendResendOnce(
     subject: string;
     html: string;
     text?: string;
+    replyTo?: string | string[];
     attachments?: ResendAttachment[];
     tags?: ResendTag[];
   }
@@ -61,6 +62,7 @@ async function sendResendOnce(
         to: params.to,
         subject: params.subject,
         html: params.html,
+        ...(params.replyTo ? { reply_to: params.replyTo } : {}),
         ...(params.text?.trim() ? { text: params.text.trim() } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
         ...(params.tags?.length ? { tags: params.tags } : {}),
@@ -89,32 +91,32 @@ async function sendResendOnce(
 
 /**
  * Sends via Resend REST API (password reset, invoice email, etc.).
- * In development, if MAIL_FROM uses an unverified domain, retries once with
- * onboarding@resend.dev so local testing keeps working. Production always uses MAIL_FROM only.
+ * If MAIL_FROM uses an unverified domain, retries once with
+ * onboarding@resend.dev so delivery keeps working.
  */
 export async function sendViaResend(params: {
   to: string[];
   subject: string;
   html: string;
   text?: string;
+  replyTo?: string | string[];
   attachments?: ResendAttachment[];
   tags?: ResendTag[];
 }): Promise<ResendSendResult> {
-  const key = env.RESEND_API_KEY;
+  const key = process.env.RESEND_API_KEY || env.RESEND_API_KEY;
   if (!key) return { ok: false, detail: "RESEND_API_KEY is not set" };
 
   const configuredFrom = env.MAIL_FROM ?? RESEND_TEST_FROM;
   let result = await sendResendOnce(key, configuredFrom, params);
 
-  const devFallback =
-    process.env.NODE_ENV !== "production" &&
+  const fallbackNeeded =
     !result.ok &&
     isResendDomainUnverifiedError(result.detail) &&
     configuredFrom.trim() !== RESEND_TEST_FROM;
 
-  if (devFallback) {
+  if (fallbackNeeded) {
     console.warn(
-      "[resend] MAIL_FROM domain not verified — retrying with onboarding@resend.dev (dev only). Add DNS at resend.com/domains or set MAIL_FROM to match RESEND_TEST_FROM."
+      `[resend] MAIL_FROM domain not verified — retrying with ${RESEND_TEST_FROM}. Add DNS at resend.com/domains or update MAIL_FROM.`
     );
     result = await sendResendOnce(key, RESEND_TEST_FROM, params);
   }

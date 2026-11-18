@@ -31,6 +31,7 @@ import {
   sendLoginOtpSms,
   toE164,
 } from "../services/twilio-sms.service.js";
+import { sendContactEnquiryEmail } from "../services/contact-email.service.js";
 
 type LimiterState = { count: number; resetAt: number };
 
@@ -116,13 +117,24 @@ const signupOtpSendSchema = z.object({
 });
 
 const contactSchema = z.object({
-  name: z.string().min(1).max(120),
-  email: z.string().email().optional(),
-  phone: z.string().min(7).max(20).optional(),
-  businessName: z.string().max(160).optional(),
-  subject: z.string().max(200).optional(),
-  message: z.string().min(1).max(2000),
-  source: z.string().max(80).optional(),
+  name: z.string().trim().min(1, "Name is required").max(120),
+  email: z
+    .string()
+    .trim()
+    .email("Please provide a valid email address")
+    .optional()
+    .or(z.literal("")),
+  phone: z
+    .string()
+    .trim()
+    .min(7, "Phone number must be at least 7 characters")
+    .max(20)
+    .optional()
+    .or(z.literal("")),
+  businessName: z.string().trim().max(160).optional().or(z.literal("")),
+  subject: z.string().trim().max(200).optional().or(z.literal("")),
+  message: z.string().trim().min(1, "Message is required").max(2000),
+  source: z.string().trim().max(80).optional(),
 });
 
 const publicPricingSchema = z.object({
@@ -495,6 +507,13 @@ export async function postPublicContact(req: Request, res: Response, next: NextF
     }
 
     const id = `contact-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const submissionDate = new Date();
+    const cleanEmail = body.email?.trim() ? body.email.trim().toLowerCase() : null;
+    const cleanPhone = body.phone?.trim() || null;
+    const cleanBusinessName = body.businessName?.trim() || null;
+    const cleanSubject = body.subject?.trim() || null;
+    const cleanSource = body.source?.trim() || null;
+
     await prisma.appJsonRow.create({
       data: {
         collection: "publicContacts",
@@ -502,15 +521,44 @@ export async function postPublicContact(req: Request, res: Response, next: NextF
         organizationId,
         payload: {
           id,
-          ...body,
-          email: body.email?.trim().toLowerCase(),
-          phone: body.phone?.trim(),
-          createdAt: new Date().toISOString(),
+          name: body.name,
+          email: cleanEmail,
+          phone: cleanPhone,
+          businessName: cleanBusinessName,
+          subject: cleanSubject,
+          message: body.message,
+          source: cleanSource,
+          createdAt: submissionDate.toISOString(),
           ip: getClientIp(req),
           userAgent: req.headers["user-agent"] ?? null,
         },
       },
     });
+
+    const emailResult = await sendContactEnquiryEmail({
+      name: body.name,
+      email: cleanEmail,
+      phone: cleanPhone,
+      businessName: cleanBusinessName,
+      subject: cleanSubject,
+      message: body.message,
+      submissionDate,
+      source: cleanSource,
+    });
+
+    if (!emailResult.ok) {
+      console.error("[public/contact] Failed to deliver contact enquiry email:", emailResult.detail);
+      const isProduction = process.env.NODE_ENV === "production";
+      res.status(502).json({
+        data: null,
+        error: {
+          message: isProduction
+            ? "Unable to deliver your enquiry to support at this time. Please try again shortly or contact support@mydetailos.com directly."
+            : `Unable to deliver your enquiry to support (${emailResult.detail}). Please check your RESEND_API_KEY in .env or contact support@mydetailos.com directly.`,
+        },
+      });
+      return;
+    }
 
     res.status(201).json({
       data: {
