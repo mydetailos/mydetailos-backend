@@ -77,31 +77,32 @@ export interface SendCustomerCredentialsResult {
 
 /**
  * Resolves the workshop frontend origin for customer portal links.
- * Always prefers `app.mydetailos.com` (or port 3002 locally) over `www.mydetailos.com`.
+ * Always prefers `app.mydetailos.com` over localhost / marketing domain.
+ * Links sent to external customer devices via WhatsApp/SMS must NEVER use localhost.
  */
-function resolveCustomerPortalOrigin(): string {
-  if (process.env.WORKSHOP_APP_ORIGIN?.trim()) {
-    return process.env.WORKSHOP_APP_ORIGIN.trim().replace(/\/$/, "");
+export function resolveCustomerPortalOrigin(): string {
+  const explicit = process.env.WORKSHOP_APP_ORIGIN?.trim().replace(/\/$/, "");
+  if (explicit && !explicit.includes("localhost") && !explicit.includes("127.0.0.1")) {
+    return explicit;
   }
+
   const origins = (env.FRONTEND_ORIGIN || "")
     .split(",")
     .map((o) => o.trim().replace(/\/$/, ""))
     .filter(Boolean);
 
-  // 1. Prefer explicit workshop app origin (app.mydetailos.com or port 3002)
-  const workshopOrigin = origins.find(
-    (o) => o.includes("app.mydetailos.com") || o.includes(":3002")
-  );
-  if (workshopOrigin) return workshopOrigin;
+  // 1. Prefer production workshop app domain if present
+  const prodOrigin = origins.find((o) => o.includes("app.mydetailos.com"));
+  if (prodOrigin) return prodOrigin;
 
-  // 2. Next, prefer any origin that is NOT the marketing website (www.mydetailos.com / port 3003)
-  const nonMarketing = origins.find(
-    (o) => !o.includes("www.mydetailos.com") && !o.includes("website") && !o.includes(":3003")
-  );
-  if (nonMarketing) return nonMarketing;
+  // 2. In production or whenever real Twilio WhatsApp outbound is active, NEVER send localhost links
+  if (process.env.NODE_ENV === "production" || isTwilioWhatsAppEnabled()) {
+    return "https://app.mydetailos.com";
+  }
 
-  // 3. Safe fallback: app.mydetailos.com in production, or first origin
-  return process.env.NODE_ENV === "production" ? "https://app.mydetailos.com" : origins[0] || "http://localhost:3002";
+  // 3. Fallback for purely local tests without real Twilio credentials
+  const localOrigin = origins.find((o) => o.includes(":3002"));
+  return localOrigin || origins[0] || "https://app.mydetailos.com";
 }
 
 /** Tenant-aware customer portal login URL: /{orgSlug}/customer/login */

@@ -80,4 +80,15 @@ describe("Customer Welcome WhatsApp Template & Parameters", () => {
     assert.equal(parsed["1"], "Amit Verma");
     assert.equal(parsed["2"], "Prime Detailers");
   });
+
+  it("never returns localhost for customer portal links when real Twilio or production is active", async () => {
+    const { resolveCustomerPortalOrigin } = await import(
+      "../src/modules/customers/customer-credentials-notify.service.js"
+    );
+    const origin = resolveCustomerPortalOrigin();
+    assert.ok(!origin.includes("localhost"), `Expected non-localhost origin but got: ${origin}`);
+    assert.ok(!origin.includes("127.0.0.1"), `Expected non-127.0.0.1 origin but got: ${origin}`);
+    assert.equal(origin, "https://app.mydetailos.com");
+  });
 });
+
